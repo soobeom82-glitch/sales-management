@@ -1,0 +1,39 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:foreground="@drawable/transaction_row_bg"
+    android:orientation="horizontal"
+    android:padding="8dp">
+
+    <TextView
+        android:id="@+id/col_ordered_at"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="3"
+        android:gravity="center"
+        android:text="2026-02-12 10:32:11"
+        android:textSize="12sp" />
+
+    <TextView
+        android:id="@+id/col_order_items"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="6"
+        android:ellipsize="end"
+        android:gravity="center"
+        android:maxLines="1"
+        android:singleLine="true"
+        android:text="다쿠아즈:딸기, 분말:아이스티"
+        android:textSize="12sp" />
+
+    <TextView
+        android:id="@+id/col_remark_flag"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:text=""
+        android:textColor="#2E7D32"
+        android:textSize="12sp" />
+
+</LinearLayout>

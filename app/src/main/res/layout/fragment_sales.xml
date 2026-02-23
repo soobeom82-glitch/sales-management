@@ -1,0 +1,69 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:gravity="top|center_horizontal">
+
+    <TextView
+        android:id="@+id/text_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="매출 데이터"
+        android:textStyle="bold"
+        android:textSize="18sp"
+        android:gravity="center" />
+
+    <TextView
+        android:id="@+id/text_today_pie_date"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:layout_gravity="center_horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:text="2026.02.12"
+        android:background="@drawable/pill_bg"
+        android:textSize="12sp" />
+
+    <com.example.vmmswidget.ui.TodayPieChartView
+        android:id="@+id/today_pie_chart"
+        android:layout_width="match_parent"
+        android:layout_height="210dp"
+        android:layout_marginTop="0dp" />
+
+    <TextView
+        android:id="@+id/text_range"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="2dp"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:text="2026.02.03 - 2026.02.09"
+        android:background="@drawable/pill_bg"
+        android:textSize="12sp" />
+
+    <TextView
+        android:id="@+id/text_total"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:text="총 0 원"
+        android:textStyle="bold"
+        android:textSize="22sp"
+        android:textColor="#1E4FA3"
+        android:gravity="center" />
+
+    <com.example.vmmswidget.ui.SalesChartView
+        android:id="@+id/sales_chart"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="6dp" />
+
+</LinearLayout>
