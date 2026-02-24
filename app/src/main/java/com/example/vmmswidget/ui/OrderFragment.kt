@@ -236,6 +236,12 @@ class OrderFragment : Fragment() {
         loadTree()
     }
 
+    override fun onDestroyView() {
+        view?.findViewById<RecyclerView>(R.id.recycler_order_tree)?.adapter = null
+        view?.findViewById<RecyclerView>(R.id.recycler_order_history)?.adapter = null
+        super.onDestroyView()
+    }
+
     private fun loadTree() {
         viewLifecycleOwner.lifecycleScope.launch {
             val dao = AppDatabase.get(requireContext()).orderDao()

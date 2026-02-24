@@ -30,6 +30,7 @@ class TransactionsFragment : Fragment() {
     private var currentTotalPages = 1
     private var searchQuery: String = ""
     private var certParam: String? = null
+    private var approvalDialog: android.app.AlertDialog? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -185,6 +186,7 @@ class TransactionsFragment : Fragment() {
     }
 
     private fun showApprovalInputDialog() {
+        approvalDialog?.dismiss()
         val dialogView = layoutInflater.inflate(R.layout.dialog_approval_code, null, false)
         val input = dialogView.findViewById<android.widget.EditText>(R.id.approval_input).apply {
             inputType = InputType.TYPE_CLASS_NUMBER
@@ -193,6 +195,12 @@ class TransactionsFragment : Fragment() {
         val dialog = android.app.AlertDialog.Builder(requireContext())
             .setView(dialogView)
             .create()
+        approvalDialog = dialog
+        dialog.setOnDismissListener {
+            if (approvalDialog === dialog) {
+                approvalDialog = null
+            }
+        }
 
         dialogView.findViewById<android.widget.Button>(R.id.approval_submit).setOnClickListener {
             val code = input.text?.toString()?.trim().orEmpty()
@@ -218,5 +226,11 @@ class TransactionsFragment : Fragment() {
         }
 
         dialog.show()
+    }
+
+    override fun onDestroyView() {
+        approvalDialog?.dismiss()
+        approvalDialog = null
+        super.onDestroyView()
     }
 }

@@ -23,6 +23,7 @@ import android.view.animation.DecelerateInterpolator
 import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.vmmswidget.data.db.AppDatabase
+import kotlinx.coroutines.Job
 
 class SalesFragment : Fragment() {
     private var lastDates: List<LocalDate> = emptyList()
@@ -30,6 +31,9 @@ class SalesFragment : Fragment() {
     private var lastDiff: Int = 0
     private var lastTodayTotal: Int = 0
     private var lastTodayShares: List<TransactionsRepository.TodayItemShare> = emptyList()
+    private var activeAnimator: ValueAnimator? = null
+    private var dailySalesDialog: AlertDialog? = null
+    private var dailySalesLoadJob: Job? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -54,51 +58,7 @@ class SalesFragment : Fragment() {
             chart.setAnimationProgress(0f)
             pieChart.setData(lastTodayTotal, lastTodayShares)
             pieChart.setAnimationProgress(0f)
-
-            val animator = ValueAnimator.ofFloat(0f, 1f).apply {
-                duration = 2000
-                interpolator = DecelerateInterpolator()
-                addUpdateListener { anim ->
-                    val f = anim.animatedValue as Float
-                    chart.setAnimationProgress(f)
-                    pieChart.setAnimationProgress(f)
-
-                    val animatedTotal = (total * f).toInt()
-                    val animatedDiff = (kotlin.math.abs(lastDiff) * f).toInt()
-                    val changeText: String
-                    val changeColor: Int
-                    if (lastDiff > 0) {
-                        changeText = "▲${String.format("%,d", animatedDiff)}원"
-                        changeColor = Color.parseColor("#E07A7A")
-                    } else if (lastDiff < 0) {
-                        changeText = "▼${String.format("%,d", animatedDiff)}원"
-                        changeColor = Color.parseColor("#6FA3D6")
-                    } else {
-                        changeText = "▲0원"
-                        changeColor = Color.parseColor("#888888")
-                    }
-                    val totalTextStr = "총 ${String.format("%,d", animatedTotal)} 원"
-                    val spacer = "\u00A0\u00A0"
-                    val full = "$totalTextStr$spacer$changeText"
-                    val spannable = SpannableStringBuilder(full)
-                    val changeStart = full.length - changeText.length
-                    spannable.setSpan(
-                        ForegroundColorSpan(changeColor),
-                        changeStart,
-                        full.length,
-                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                    )
-                    spannable.setSpan(
-                        RelativeSizeSpan(0.7f),
-                        changeStart,
-                        full.length,
-                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                    )
-                    totalText.setTextColor(Color.parseColor("#333333"))
-                    totalText.text = spannable
-                }
-            }
-            animator.start()
+            startSalesAnimation(chart, pieChart, totalText, total)
         }
         viewLifecycleOwner.lifecycleScope.launch {
             val (allRecords, pieData) = withContext(Dispatchers.IO) {
@@ -150,53 +110,12 @@ class SalesFragment : Fragment() {
             chart.setAnimationProgress(0f)
             pieChart.setData(lastTodayTotal, lastTodayShares)
             pieChart.setAnimationProgress(0f)
-            val animator = ValueAnimator.ofFloat(0f, 1f).apply {
-                duration = 2000
-                interpolator = DecelerateInterpolator()
-                addUpdateListener { anim ->
-                    val f = anim.animatedValue as Float
-                    chart.setAnimationProgress(f)
-                    pieChart.setAnimationProgress(f)
-                    val animatedTotal = (total * f).toInt()
-                    val animatedDiff = (kotlin.math.abs(lastDiff) * f).toInt()
-                    val changeText: String
-                    val changeColor: Int
-                    if (lastDiff > 0) {
-                        changeText = "▲${String.format("%,d", animatedDiff)}원"
-                        changeColor = Color.parseColor("#E07A7A")
-                    } else if (lastDiff < 0) {
-                        changeText = "▼${String.format("%,d", animatedDiff)}원"
-                        changeColor = Color.parseColor("#6FA3D6")
-                    } else {
-                        changeText = "▲0원"
-                        changeColor = Color.parseColor("#888888")
-                    }
-                    val totalTextStr = "총 ${String.format("%,d", animatedTotal)} 원"
-                    val spacer = "\u00A0\u00A0"
-                    val full = "$totalTextStr$spacer$changeText"
-                    val spannable = SpannableStringBuilder(full)
-                    val changeStart = full.length - changeText.length
-                    spannable.setSpan(
-                        ForegroundColorSpan(changeColor),
-                        changeStart,
-                        full.length,
-                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                    )
-                    spannable.setSpan(
-                        RelativeSizeSpan(0.7f),
-                        changeStart,
-                        full.length,
-                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                    )
-                    totalText.setTextColor(Color.parseColor("#333333"))
-                    totalText.text = spannable
-                }
-            }
-            animator.start()
+            startSalesAnimation(chart, pieChart, totalText, total)
         }
     }
 
     private fun showDailySalesDialog() {
+        if (dailySalesDialog?.isShowing == true) return
         val dialogView = layoutInflater.inflate(R.layout.dialog_daily_sales, null, false)
         val recycler = dialogView.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.recycler_daily_sales)
         val emptyText = dialogView.findViewById<android.widget.TextView>(R.id.text_daily_sales_empty)
@@ -208,15 +127,93 @@ class SalesFragment : Fragment() {
         val dialog = AlertDialog.Builder(requireContext())
             .setView(dialogView)
             .create()
+        dailySalesDialog = dialog
         close.setOnClickListener { dialog.dismiss() }
+        dialog.setOnDismissListener {
+            dailySalesLoadJob?.cancel()
+            dailySalesLoadJob = null
+            if (dailySalesDialog === dialog) {
+                dailySalesDialog = null
+            }
+        }
 
-        lifecycleScope.launch {
+        dailySalesLoadJob?.cancel()
+        dailySalesLoadJob = viewLifecycleOwner.lifecycleScope.launch {
             val all = withContext(Dispatchers.IO) {
                 AppDatabase.get(requireContext()).salesDao().getAll()
             }.sortedByDescending { it.date }
+            if (!dialog.isShowing) return@launch
             adapter.submit(all)
             emptyText.visibility = if (all.isEmpty()) View.VISIBLE else View.GONE
         }
         dialog.show()
+    }
+
+    private fun startSalesAnimation(
+        chart: SalesChartView,
+        pieChart: TodayPieChartView,
+        totalText: android.widget.TextView,
+        total: Int
+    ) {
+        activeAnimator?.cancel()
+        activeAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 2000
+            interpolator = DecelerateInterpolator()
+            addUpdateListener { anim ->
+                val f = anim.animatedValue as Float
+                chart.setAnimationProgress(f)
+                pieChart.setAnimationProgress(f)
+
+                val animatedTotal = (total * f).toInt()
+                val animatedDiff = (kotlin.math.abs(lastDiff) * f).toInt()
+                val changeText: String
+                val changeColor: Int
+                if (lastDiff > 0) {
+                    changeText = "▲${String.format("%,d", animatedDiff)}원"
+                    changeColor = Color.parseColor("#E07A7A")
+                } else if (lastDiff < 0) {
+                    changeText = "▼${String.format("%,d", animatedDiff)}원"
+                    changeColor = Color.parseColor("#6FA3D6")
+                } else {
+                    changeText = "▲0원"
+                    changeColor = Color.parseColor("#888888")
+                }
+                val totalTextStr = "총 ${String.format("%,d", animatedTotal)} 원"
+                val spacer = "\u00A0\u00A0"
+                val full = "$totalTextStr$spacer$changeText"
+                val spannable = SpannableStringBuilder(full)
+                val changeStart = full.length - changeText.length
+                spannable.setSpan(
+                    ForegroundColorSpan(changeColor),
+                    changeStart,
+                    full.length,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                spannable.setSpan(
+                    RelativeSizeSpan(0.7f),
+                    changeStart,
+                    full.length,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                totalText.setTextColor(Color.parseColor("#333333"))
+                totalText.text = spannable
+            }
+        }.also { it.start() }
+    }
+
+    override fun onStop() {
+        activeAnimator?.cancel()
+        activeAnimator = null
+        super.onStop()
+    }
+
+    override fun onDestroyView() {
+        activeAnimator?.cancel()
+        activeAnimator = null
+        dailySalesLoadJob?.cancel()
+        dailySalesLoadJob = null
+        dailySalesDialog?.dismiss()
+        dailySalesDialog = null
+        super.onDestroyView()
     }
 }
