@@ -31,8 +31,18 @@ class CookieStore(context: Context) {
     fun loadCookies(url: HttpUrl): List<Cookie> {
         val key = keyFor(url)
         val set = prefs.getStringSet(key, emptySet()) ?: emptySet()
-        return set.mapNotNull { Cookie.fromPersistedString(url, it) }
+        val matched = set.mapNotNull { Cookie.fromPersistedString(url, it) }
             .filterNot { it.hasExpired() }
+            .filter { it.matches(url) }
+
+        // Prevent duplicate cookie names from being sent (can break session resolution on some servers).
+        val dedupByName = LinkedHashMap<String, Cookie>()
+        matched
+            .sortedBy { it.path.length }
+            .forEach { cookie ->
+                dedupByName[cookie.name] = cookie
+            }
+        return dedupByName.values.toList()
     }
 
     fun clear(url: HttpUrl) {
