@@ -10,6 +10,7 @@ import androidx.work.WorkManager
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.workDataOf
 import com.example.vmmswidget.worker.FetchWidgetWorker
+import com.example.vmmswidget.worker.EasyShopDailySnapshotWorker
 import java.util.concurrent.TimeUnit
 import java.time.Duration
 import java.time.LocalDateTime
@@ -18,6 +19,7 @@ import java.time.LocalTime
 object WorkScheduler {
     private const val PERIODIC_WORK_NAME = "vmms_periodic_refresh"
     private const val DAILY_WORK_NAME = "vmms_daily_record"
+    private const val EASYSHOP_DAILY_WORK_NAME = "easyshop_daily_record"
 
     fun schedulePeriodic(context: Context) {
         val constraints = Constraints.Builder()
@@ -50,6 +52,26 @@ object WorkScheduler {
 
         WorkManager.getInstance(context).enqueueUniqueWork(
             DAILY_WORK_NAME,
+            ExistingWorkPolicy.REPLACE,
+            request
+        )
+
+        scheduleEasyShopDailyRecord(context)
+    }
+
+    fun scheduleEasyShopDailyRecord(context: Context) {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+
+        val delay = nextDelayTo(LocalTime.of(23, 59, 59))
+        val request = OneTimeWorkRequestBuilder<EasyShopDailySnapshotWorker>()
+            .setConstraints(constraints)
+            .setInitialDelay(delay.toMillis(), TimeUnit.MILLISECONDS)
+            .build()
+
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            EASYSHOP_DAILY_WORK_NAME,
             ExistingWorkPolicy.REPLACE,
             request
         )
