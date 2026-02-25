@@ -11,6 +11,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.workDataOf
 import com.example.vmmswidget.worker.FetchWidgetWorker
 import com.example.vmmswidget.worker.EasyShopDailySnapshotWorker
+import com.example.vmmswidget.worker.FetchEasyShopWidgetWorker
 import java.util.concurrent.TimeUnit
 import java.time.Duration
 import java.time.LocalDateTime
@@ -18,6 +19,7 @@ import java.time.LocalTime
 
 object WorkScheduler {
     private const val PERIODIC_WORK_NAME = "vmms_periodic_refresh"
+    private const val EASYSHOP_PERIODIC_WORK_NAME = "easyshop_periodic_refresh"
     private const val DAILY_WORK_NAME = "vmms_daily_record"
     private const val EASYSHOP_DAILY_WORK_NAME = "easyshop_daily_record"
 
@@ -33,6 +35,23 @@ object WorkScheduler {
 
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             PERIODIC_WORK_NAME,
+            ExistingPeriodicWorkPolicy.UPDATE,
+            request
+        )
+    }
+
+    fun scheduleEasyShopPeriodic(context: Context) {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+
+        val request = PeriodicWorkRequestBuilder<FetchEasyShopWidgetWorker>(30, TimeUnit.MINUTES)
+            .setConstraints(constraints)
+            .setInputData(workDataOf(FetchEasyShopWidgetWorker.KEY_FORCE_REFRESH to false))
+            .build()
+
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            EASYSHOP_PERIODIC_WORK_NAME,
             ExistingPeriodicWorkPolicy.UPDATE,
             request
         )

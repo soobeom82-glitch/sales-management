@@ -19,6 +19,7 @@ import com.example.vmmswidget.data.AuthStore
 import com.example.vmmswidget.data.WidgetDataStore
 import com.example.vmmswidget.net.EasyShopRepository
 import com.example.vmmswidget.widget.WorkScheduler
+import com.example.vmmswidget.worker.FetchEasyShopWidgetWorker
 import com.example.vmmswidget.worker.FetchWidgetWorker
 import kotlinx.coroutines.launch
 
@@ -96,10 +97,15 @@ class LoginFragment : Fragment() {
 
             WorkScheduler.schedulePeriodic(requireContext())
             WorkScheduler.scheduleDailyRecord(requireContext())
+            WorkScheduler.scheduleEasyShopPeriodic(requireContext())
             val req = OneTimeWorkRequestBuilder<FetchWidgetWorker>()
                 .setInputData(workDataOf(FetchWidgetWorker.KEY_FORCE_REFRESH to true))
                 .build()
             WorkManager.getInstance(requireContext()).enqueue(req)
+            val easyReq = OneTimeWorkRequestBuilder<FetchEasyShopWidgetWorker>()
+                .setInputData(workDataOf(FetchEasyShopWidgetWorker.KEY_FORCE_REFRESH to true))
+                .build()
+            WorkManager.getInstance(requireContext()).enqueue(easyReq)
             status.text = "상태: 로그인 정보 저장 및 새로고침 요청됨"
         }
     }

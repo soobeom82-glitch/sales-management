@@ -37,10 +37,45 @@ class WidgetDataStore(context: Context) {
 
     fun isRefreshing(): Boolean = prefs.getBoolean(KEY_REFRESHING, false)
 
+    fun saveEasyShopDisplayText(text: String) {
+        prefs.edit().putString(KEY_EASYSHOP_TEXT, text).apply()
+    }
+
+    fun getEasyShopDisplayText(): String = prefs.getString(KEY_EASYSHOP_TEXT, "데이터 없음") ?: "데이터 없음"
+
+    fun saveEasyShopAmount(amount: Int) {
+        prefs.edit().putInt(KEY_EASYSHOP_AMOUNT, amount).apply()
+    }
+
+    fun getEasyShopAmount(): Int = prefs.getInt(KEY_EASYSHOP_AMOUNT, 0)
+
+    fun saveEasyShopUpdatedAt(text: String) {
+        prefs.edit().putString(KEY_EASYSHOP_UPDATED_AT, text).apply()
+    }
+
+    fun getEasyShopUpdatedAt(): String = prefs.getString(KEY_EASYSHOP_UPDATED_AT, "--:--:--") ?: "--:--:--"
+
+    fun saveEasyShopRefreshing(value: Boolean) {
+        prefs.edit().putBoolean(KEY_EASYSHOP_REFRESHING, value).apply()
+    }
+
+    fun isEasyShopRefreshing(): Boolean = prefs.getBoolean(KEY_EASYSHOP_REFRESHING, false)
+
+    fun saveEasyShopHasCanceledToday(value: Boolean) {
+        prefs.edit().putBoolean(KEY_EASYSHOP_HAS_CANCELED_TODAY, value).apply()
+    }
+
+    fun hasEasyShopCanceledToday(): Boolean = prefs.getBoolean(KEY_EASYSHOP_HAS_CANCELED_TODAY, false)
+
     companion object {
         private const val KEY_TEXT = "display_text"
         private const val KEY_AMOUNT = "amount_value"
         private const val KEY_UPDATED_AT = "updated_at"
         private const val KEY_REFRESHING = "refreshing"
+        private const val KEY_EASYSHOP_TEXT = "easyshop_display_text"
+        private const val KEY_EASYSHOP_AMOUNT = "easyshop_amount_value"
+        private const val KEY_EASYSHOP_UPDATED_AT = "easyshop_updated_at"
+        private const val KEY_EASYSHOP_REFRESHING = "easyshop_refreshing"
+        private const val KEY_EASYSHOP_HAS_CANCELED_TODAY = "easyshop_has_canceled_today"
     }
 }

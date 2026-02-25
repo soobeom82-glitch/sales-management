@@ -12,7 +12,8 @@
 
         <receiver
             android:name=".widget.VmmsWidgetProvider"
-            android:exported="false">
+            android:exported="false"
+            android:label="VMMS 위젯">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="com.example.vmmswidget.ACTION_REFRESH" />
@@ -21,6 +22,20 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/vmms_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.EasyShopWidgetProvider"
+            android:exported="false"
+            android:label="EasyShop 위젯">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.example.vmmswidget.ACTION_EASYSHOP_REFRESH" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/easyshop_widget_info" />
         </receiver>
 
         <activity
