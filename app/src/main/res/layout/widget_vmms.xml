@@ -15,12 +15,14 @@
 
         <TextView
             android:id="@+id/widget_title"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:fontFamily="sans-serif-medium"
+            android:gravity="center"
             android:text="VMMS 최신"
             android:textColor="#334155"
-            android:textSize="14sp" />
+            android:textSize="11sp"
+            android:textStyle="bold" />
 
         <TextView
             android:id="@+id/widget_content"
@@ -29,8 +31,74 @@
             android:fontFamily="sans-serif-medium"
             android:text="데이터 없음"
             android:textColor="#334155"
-            android:textSize="13sp"
-            android:layout_marginTop="6dp" />
+            android:textSize="11sp"
+            android:layout_marginTop="4dp" />
+
+        <LinearLayout
+            android:id="@+id/widget_easyshop_amount_block"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/widget_sales_label"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:fontFamily="sans-serif-medium"
+                    android:gravity="center"
+                    android:text="매출"
+                    android:textColor="#334155"
+                    android:textSize="11sp" />
+
+                <TextView
+                    android:id="@+id/widget_sales_amount"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:fontFamily="sans-serif-medium"
+                    android:gravity="end"
+                    android:text="0원"
+                    android:textColor="#334155"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/widget_deposit_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/widget_deposit_label"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:fontFamily="sans-serif-medium"
+                    android:gravity="center"
+                    android:text="입금"
+                    android:textColor="#334155"
+                    android:textSize="11sp" />
+
+                <TextView
+                    android:id="@+id/widget_deposit_amount"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:fontFamily="sans-serif-medium"
+                    android:gravity="end"
+                    android:text="0원"
+                    android:textColor="#334155"
+                    android:textSize="11sp" />
+            </LinearLayout>
+        </LinearLayout>
     </LinearLayout>
 
     <!-- Middle: chart -->
@@ -38,7 +106,7 @@
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_weight="4"
-        android:paddingStart="8dp"
+        android:paddingStart="16dp"
         android:paddingEnd="8dp"
         android:gravity="center">
 
@@ -58,7 +126,7 @@
             android:textColor="#334155"
             android:singleLine="true"
             android:ellipsize="end"
-            android:textSize="10sp" />
+            android:textSize="11sp" />
     </FrameLayout>
 
     <!-- Order badge -->
@@ -75,7 +143,7 @@
             android:layout_height="wrap_content"
             android:fontFamily="sans-serif-medium"
             android:text="발주"
-            android:textSize="10sp"
+            android:textSize="11sp"
             android:textColor="#334155" />
 
         <TextView

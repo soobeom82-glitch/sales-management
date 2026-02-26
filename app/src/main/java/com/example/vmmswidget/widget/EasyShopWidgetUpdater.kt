@@ -26,15 +26,15 @@ object EasyShopWidgetUpdater {
 
     fun update(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
         val dataStore = WidgetDataStore(context)
-        val text = dataStore.getEasyShopDisplayText()
-        val amount = dataStore.getEasyShopAmount()
+        val salesAmount = dataStore.getEasyShopAmount()
+        val depositAmount = dataStore.getEasyShopDepositAmount()
         val updatedAt = dataStore.getEasyShopUpdatedAt()
         val refreshing = dataStore.isEasyShopRefreshing()
         val hasCanceledToday = dataStore.hasEasyShopCanceledToday()
         val bgRes = if (hasCanceledToday) {
             R.drawable.widget_bg_cancel
         } else {
-            pickBackgroundRes(amount)
+            pickBackgroundRes(salesAmount)
         }
         val history = kotlinx.coroutines.runBlocking {
             val today = LocalDate.now().toString()
@@ -67,14 +67,24 @@ object EasyShopWidgetUpdater {
         for (id in appWidgetIds) {
             val views = RemoteViews(context.packageName, R.layout.widget_vmms)
             views.setTextViewText(R.id.widget_title, "EasyShop 최신")
-            views.setTextViewText(R.id.widget_content, text)
+            views.setTextViewText(R.id.widget_sales_label, "매출")
+            views.setTextViewText(R.id.widget_deposit_label, "입금")
+            views.setTextViewText(R.id.widget_sales_amount, "${String.format("%,d", salesAmount)}원")
+            views.setTextViewText(R.id.widget_deposit_amount, "${String.format("%,d", depositAmount)}원")
             views.setTextViewText(R.id.widget_updated, updatedAt)
             views.setInt(R.id.widget_container, "setBackgroundResource", bgRes)
             views.setImageViewBitmap(R.id.widget_chart, chart)
+            views.setViewVisibility(R.id.widget_content, View.GONE)
+            views.setViewVisibility(R.id.widget_easyshop_amount_block, View.VISIBLE)
+            views.setViewVisibility(R.id.widget_deposit_row, View.VISIBLE)
             views.setViewVisibility(R.id.widget_progress, if (refreshing) View.VISIBLE else View.GONE)
             views.setTextColor(R.id.widget_avg, Color.parseColor("#334155"))
             views.setTextColor(R.id.widget_title, Color.parseColor("#334155"))
             views.setTextColor(R.id.widget_content, Color.parseColor("#334155"))
+            views.setTextColor(R.id.widget_sales_label, Color.parseColor("#334155"))
+            views.setTextColor(R.id.widget_sales_amount, Color.parseColor("#334155"))
+            views.setTextColor(R.id.widget_deposit_label, Color.parseColor("#334155"))
+            views.setTextColor(R.id.widget_deposit_amount, Color.parseColor("#334155"))
             views.setTextColor(R.id.widget_order_label, Color.parseColor("#334155"))
             views.setTextColor(R.id.widget_updated, Color.parseColor("#334155"))
             val spacer = "\u00A0\u00A0"
@@ -102,7 +112,10 @@ object EasyShopWidgetUpdater {
 
             val openSales = Intent(context, MainActivity::class.java).apply {
                 putExtra(MainActivity.EXTRA_TAB_INDEX, 0)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(MainActivity.EXTRA_SALES_SUBTAB, MainActivity.SALES_SUBTAB_EASYSHOP)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
             }
             val openSalesPending = android.app.PendingIntent.getActivity(
                 context,
@@ -110,9 +123,17 @@ object EasyShopWidgetUpdater {
                 openSales,
                 android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
             )
+            views.setOnClickPendingIntent(R.id.widget_container, openSalesPending)
             views.setOnClickPendingIntent(R.id.widget_chart, openSalesPending)
             views.setOnClickPendingIntent(R.id.widget_title, openSalesPending)
             views.setOnClickPendingIntent(R.id.widget_content, openSalesPending)
+            views.setOnClickPendingIntent(R.id.widget_easyshop_amount_block, openSalesPending)
+            views.setOnClickPendingIntent(R.id.widget_sales_label, openSalesPending)
+            views.setOnClickPendingIntent(R.id.widget_sales_amount, openSalesPending)
+            views.setOnClickPendingIntent(R.id.widget_deposit_label, openSalesPending)
+            views.setOnClickPendingIntent(R.id.widget_deposit_amount, openSalesPending)
+            views.setOnClickPendingIntent(R.id.widget_avg, openSalesPending)
+            views.setOnClickPendingIntent(R.id.widget_updated, openSalesPending)
 
             val openOrder = Intent(context, MainActivity::class.java).apply {
                 putExtra(MainActivity.EXTRA_TAB_INDEX, 2)

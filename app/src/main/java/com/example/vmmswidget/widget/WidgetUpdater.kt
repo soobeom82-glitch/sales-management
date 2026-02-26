@@ -80,14 +80,26 @@ object WidgetUpdater {
 
         for (id in appWidgetIds) {
             val views = RemoteViews(context.packageName, R.layout.widget_vmms)
+            views.setTextViewText(R.id.widget_title, "VMMS 최신")
             views.setTextViewText(R.id.widget_content, text)
+            views.setTextViewText(R.id.widget_sales_label, "매출")
+            views.setTextViewText(R.id.widget_deposit_label, "입금")
+            views.setTextViewText(R.id.widget_sales_amount, "${String.format("%,d", amount)}원")
+            views.setTextViewText(R.id.widget_deposit_amount, "-")
             views.setTextViewText(R.id.widget_updated, updatedAt)
             views.setInt(R.id.widget_container, "setBackgroundResource", bgRes)
             views.setImageViewBitmap(R.id.widget_chart, chart)
+            views.setViewVisibility(R.id.widget_content, View.GONE)
+            views.setViewVisibility(R.id.widget_easyshop_amount_block, View.VISIBLE)
+            views.setViewVisibility(R.id.widget_deposit_row, View.GONE)
             views.setViewVisibility(R.id.widget_progress, if (refreshing) View.VISIBLE else View.GONE)
             views.setTextColor(R.id.widget_avg, Color.parseColor("#334155"))
             views.setTextColor(R.id.widget_title, Color.parseColor("#334155"))
             views.setTextColor(R.id.widget_content, Color.parseColor("#334155"))
+            views.setTextColor(R.id.widget_sales_label, Color.parseColor("#334155"))
+            views.setTextColor(R.id.widget_sales_amount, Color.parseColor("#334155"))
+            views.setTextColor(R.id.widget_deposit_label, Color.parseColor("#334155"))
+            views.setTextColor(R.id.widget_deposit_amount, Color.parseColor("#334155"))
             views.setTextColor(R.id.widget_order_label, Color.parseColor("#334155"))
             views.setTextColor(R.id.widget_updated, Color.parseColor("#334155"))
             val spacer = "\u00A0\u00A0"
@@ -139,6 +151,11 @@ object WidgetUpdater {
                 android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
             )
             views.setOnClickPendingIntent(R.id.widget_content, openTransactionsPending)
+            views.setOnClickPendingIntent(R.id.widget_easyshop_amount_block, openTransactionsPending)
+            views.setOnClickPendingIntent(R.id.widget_sales_label, openTransactionsPending)
+            views.setOnClickPendingIntent(R.id.widget_sales_amount, openTransactionsPending)
+            views.setOnClickPendingIntent(R.id.widget_deposit_label, openTransactionsPending)
+            views.setOnClickPendingIntent(R.id.widget_deposit_amount, openTransactionsPending)
             views.setOnClickPendingIntent(R.id.widget_title, openTransactionsPending)
 
             val openOrder = Intent(context, MainActivity::class.java).apply {

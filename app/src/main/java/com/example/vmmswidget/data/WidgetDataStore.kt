@@ -49,6 +49,12 @@ class WidgetDataStore(context: Context) {
 
     fun getEasyShopAmount(): Int = prefs.getInt(KEY_EASYSHOP_AMOUNT, 0)
 
+    fun saveEasyShopDepositAmount(amount: Int) {
+        prefs.edit().putInt(KEY_EASYSHOP_DEPOSIT_AMOUNT, amount).apply()
+    }
+
+    fun getEasyShopDepositAmount(): Int = prefs.getInt(KEY_EASYSHOP_DEPOSIT_AMOUNT, 0)
+
     fun saveEasyShopUpdatedAt(text: String) {
         prefs.edit().putString(KEY_EASYSHOP_UPDATED_AT, text).apply()
     }
@@ -74,6 +80,7 @@ class WidgetDataStore(context: Context) {
         private const val KEY_REFRESHING = "refreshing"
         private const val KEY_EASYSHOP_TEXT = "easyshop_display_text"
         private const val KEY_EASYSHOP_AMOUNT = "easyshop_amount_value"
+        private const val KEY_EASYSHOP_DEPOSIT_AMOUNT = "easyshop_deposit_amount_value"
         private const val KEY_EASYSHOP_UPDATED_AT = "easyshop_updated_at"
         private const val KEY_EASYSHOP_REFRESHING = "easyshop_refreshing"
         private const val KEY_EASYSHOP_HAS_CANCELED_TODAY = "easyshop_has_canceled_today"
