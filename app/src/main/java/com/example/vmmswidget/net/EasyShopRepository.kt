@@ -398,26 +398,6 @@ class EasyShopRepository(private val context: Context) {
             label = "TESS103S01"
         )
 
-        if (!directParsed.success) {
-            val summaryParsed = querySummarySalesTess501S03(
-                client = client,
-                http = http,
-                memberId = memberId,
-                loginId = userId,
-                from = from,
-                to = to
-            )
-            if (summaryParsed.success && summaryParsed.records.isNotEmpty()) {
-                val merged = mergeSalesRecords(summaryParsed.records)
-                return@withContext SalesFetchResult(
-                    success = true,
-                    message = "EasyShop 요약 매출 조회 성공 (${merged.size}건)",
-                    records = merged,
-                    totalAmount = merged.sumOf { it.amount }
-                )
-            }
-        }
-
         val rangeDays = ChronoUnit.DAYS.between(from, to).toInt() + 1
         val directDistinctDateCount = directParsed.records
             .asSequence()
@@ -472,23 +452,6 @@ class EasyShopRepository(private val context: Context) {
         }
 
         if (successDays == 0) {
-            val summaryParsed = querySummarySalesTess501S03(
-                client = client,
-                http = http,
-                memberId = memberId,
-                loginId = userId,
-                from = from,
-                to = to
-            )
-            if (summaryParsed.success && summaryParsed.records.isNotEmpty()) {
-                val merged = mergeSalesRecords(summaryParsed.records)
-                return@withContext SalesFetchResult(
-                    success = true,
-                    message = "EasyShop 요약 매출 조회 성공 (${merged.size}건)",
-                    records = merged,
-                    totalAmount = merged.sumOf { it.amount }
-                )
-            }
             val failMessage = if (directParsed.success) {
                 "EasyShop 일자별 매출 조회 결과가 없습니다."
             } else {
@@ -541,15 +504,19 @@ class EasyShopRepository(private val context: Context) {
         val authStore = AuthStore(context)
         val url = EasyShopConfig.CALL_SERVICE_URL.toHttpUrl()
         var session = ensureEasyShopSessionCookies(http, url, loadSessionParams(http))
+        val loginAutId = preloadLoginFlowContext(client, memberId, userId, session)
         val menuAutId = preloadMenuContext(client, memberId, session)
-        preloadSsoContext(client, memberId, session)
         val authCtx = preloadAuthContext(client, memberId, userId, session)
-        val permAutId = preloadPermissionCheck(client, memberId, session)
-        val resolvedAutId = authCtx.autId
+        var resolvedAutId = loginAutId
+            .ifBlank { authCtx.autId }
             .ifBlank { menuAutId }
-            .ifBlank { permAutId }
             .ifBlank { authStore.getEasyShopAutId().orEmpty() }
-            .ifBlank { resolveKnownAutId(userId, memberId) }
+        preloadMdiContext(client, memberId, session)
+        preloadSalesScreenContext(client, memberId, resolvedAutId, session)
+        val permAutId = preloadPermissionCheck(client, memberId, session)
+        if (resolvedAutId.isBlank() && permAutId.isNotBlank()) {
+            resolvedAutId = permAutId
+        }
         if (resolvedAutId.isNotBlank()) {
             authStore.saveEasyShopAutId(resolvedAutId)
         }
@@ -611,6 +578,113 @@ class EasyShopRepository(private val context: Context) {
         return parsed
     }
 
+    private fun preloadLoginFlowContext(
+        client: OkHttpClient,
+        memberId: String,
+        loginId: String,
+        session: SessionParams
+    ): String {
+        val url = EasyShopConfig.CALL_SERVICE_URL.toHttpUrl()
+        executeCallService(
+            client = client,
+            url = url,
+            bodyXml = buildTcmm100S05Xml(memberId = memberId, loginId = loginId, session = session),
+            label = "TCMM100S05"
+        )
+        executeCallService(
+            client = client,
+            url = url,
+            bodyXml = buildTpoe201S11Xml(memberId = memberId, loginId = loginId, session = session),
+            label = "TPOE201S11"
+        )
+        preloadSsoContext(client, memberId, session)
+        val authBody = executeCallService(
+            client = client,
+            url = url,
+            bodyXml = buildAuthInitXml(
+                memberId = memberId,
+                loginId = loginId,
+                groupYn = "N",
+                argPgmId = "Login",
+                session = session
+            ),
+            label = "TCMM001S02-Login"
+        ).orEmpty()
+
+        if (authBody.isNotBlank()) {
+            logDatasetSnapshot(authBody, "dsOutData", "TCMM001S02-Login")
+            logDatasetSnapshot(authBody, "subData", "TCMM001S02-Login")
+        }
+        var autId = parseCol(authBody, "aut_id")
+        if (autId.isBlank()) {
+            val authByMember = executeCallService(
+                client = client,
+                url = url,
+                bodyXml = buildAuthInitXml(
+                    memberId = memberId,
+                    loginId = memberId,
+                    groupYn = "N",
+                    argPgmId = "Login",
+                    session = session
+                ),
+                label = "TCMM001S02-LoginByMember"
+            ).orEmpty()
+            if (authByMember.isNotBlank()) {
+                logDatasetSnapshot(authByMember, "dsOutData", "TCMM001S02-LoginByMember")
+                logDatasetSnapshot(authByMember, "subData", "TCMM001S02-LoginByMember")
+            }
+            autId = parseCol(authByMember, "aut_id")
+        }
+        Log.i("Vmms", "EasyShop preload login context: aut_id=$autId")
+        return autId
+    }
+
+    private fun preloadSalesScreenContext(
+        client: OkHttpClient,
+        memberId: String,
+        autId: String,
+        session: SessionParams
+    ) {
+        val url = EasyShopConfig.CALL_SERVICE_URL.toHttpUrl()
+        executeCallService(
+            client = client,
+            url = url,
+            bodyXml = buildTcmm100S03Xml(memberId = memberId, session = session),
+            label = "TCMM100S03"
+        )
+
+        if (autId.isBlank()) return
+        val menuIds = listOf("1000007727", "1000008225")
+        menuIds.forEach { menuId ->
+            executeCallService(
+                client = client,
+                url = url,
+                bodyXml = buildTcmm001S10Xml(memberId = memberId, menuId = menuId, autId = autId, session = session),
+                label = "TCMM001S10-$menuId"
+            )
+        }
+        executeCallService(
+            client = client,
+            url = url,
+            bodyXml = buildTcmm001S03Xml(memberId = memberId, autId = autId, session = session),
+            label = "TCMM001S03"
+        )
+    }
+
+    private fun preloadMdiContext(
+        client: OkHttpClient,
+        memberId: String,
+        session: SessionParams
+    ) {
+        val url = EasyShopConfig.CALL_SERVICE_URL.toHttpUrl()
+        executeCallService(
+            client = client,
+            url = url,
+            bodyXml = buildTmcm990S01Xml(memberId = memberId, session = session),
+            label = "TMCM990S01"
+        )
+    }
+
     private fun ensureEasyShopSessionCookies(
         http: HttpClient,
         url: okhttp3.HttpUrl,
@@ -626,7 +700,7 @@ class EasyShopRepository(private val context: Context) {
             ?: (now + 7_200_000L)
         val latestTouch = now.toString()
         val remainTime = (sessionExpiryLong - now).coerceAtLeast(0L).toString()
-        val clientOffset = session.clientTimeOffset.ifBlank { "55" }
+        val clientOffset = session.clientTimeOffset.ifBlank { "66" }
 
         fun upsert(name: String, value: String) {
             val cookie = Cookie.Builder()
@@ -721,92 +795,6 @@ class EasyShopRepository(private val context: Context) {
                 )
             )
         }
-        return ParsedSales(success = true, message = "OK", records = out)
-    }
-
-    private suspend fun querySummarySalesTess501S03(
-        client: OkHttpClient,
-        http: HttpClient,
-        memberId: String,
-        loginId: String,
-        from: LocalDate,
-        to: LocalDate
-    ): ParsedSales {
-        val url = EasyShopConfig.CALL_SERVICE_URL.toHttpUrl()
-        val session = ensureEasyShopSessionCookies(http, url, loadSessionParams(http))
-        val body = executeCallService(
-            client = client,
-            url = url,
-            bodyXml = buildTess501S03Xml(
-                memberId = memberId,
-                loginId = loginId,
-                session = session
-            ),
-            label = "TESS501S03"
-        ) ?: return ParsedSales(
-            success = false,
-            message = "EasyShop TESS501S03 호출 실패",
-            records = emptyList()
-        )
-
-        val errorCode = parseParameter(body, "ErrorCode")
-        val errorMsg = parseParameter(body, "ErrorMsg")
-        if (errorCode.isNotBlank() && errorCode != "0") {
-            return ParsedSales(
-                success = false,
-                message = "EasyShop TESS501S03 오류(ErrorCode=$errorCode, $errorMsg)",
-                records = emptyList()
-            )
-        }
-
-        val rows = extractDatasetRows(body, "data")
-        if (rows.isEmpty()) {
-            return ParsedSales(
-                success = false,
-                message = "EasyShop TESS501S03 데이터 없음",
-                records = emptyList()
-            )
-        }
-
-        val out = ArrayList<SalesRecord>(rows.size)
-        for ((index, row) in rows.withIndex()) {
-            val dateRaw = parseDatasetCol(row, "pay_plan_dt")
-            val date = parseDateYYYYMMDD(dateRaw) ?: continue
-            if (date.isBefore(from) || date.isAfter(to)) continue
-
-            val amount = parseDatasetCol(row, "tot_amt")
-                .replace(",", "")
-                .toIntOrNull() ?: 0
-            val cnt = parseDatasetCol(row, "tot_cnt")
-
-            out.add(
-                SalesRecord(
-                    seqNo = index + 1,
-                    transactionNo = "TESS501S03-$dateRaw",
-                    terminalNo = "-",
-                    status = "집계",
-                    transactionDate = date.toString(),
-                    transactionTime = "${date.monthValue}/${date.dayOfMonth} 00:00",
-                    cardNo = "",
-                    cardType = "합계",
-                    issuerName = "EasyShop",
-                    purchaseName = "EasyShop",
-                    approvalNo = cnt,
-                    amount = amount,
-                    responseText = "",
-                    isCanceled = false
-                )
-            )
-        }
-
-        if (out.isEmpty()) {
-            return ParsedSales(
-                success = false,
-                message = "EasyShop TESS501S03 기간 내 데이터 없음",
-                records = emptyList()
-            )
-        }
-
         return ParsedSales(success = true, message = "OK", records = out)
     }
 
@@ -939,7 +927,7 @@ class EasyShopRepository(private val context: Context) {
         """.trimIndent()
     }
 
-    private fun buildTess501S03Xml(
+    private fun buildTcmm100S05Xml(
         memberId: String,
         loginId: String,
         session: SessionParams
@@ -948,18 +936,20 @@ class EasyShopRepository(private val context: Context) {
             <?xml version="1.0" encoding="UTF-8"?>
             <Root xmlns="http://www.nexacroplatform.com/platform/dataset">
                 ${buildCommonParametersXml(
-            argPgmId = "MainFrameEs",
+            argPgmId = "Login",
             memberId = memberId,
             session = session
         )}
                 <Dataset id="dsInData">
                     <ColumnInfo>
                         <Column id="SvcId" type="STRING" size="256"/>
+                        <Column id="gubun" type="STRING" size="256"/>
                         <Column id="login_id" type="STRING" size="256"/>
                     </ColumnInfo>
                     <Rows>
                         <Row>
-                            <Col id="SvcId">TESS501S03</Col>
+                            <Col id="SvcId">TCMM100S05</Col>
+                            <Col id="gubun">0</Col>
                             <Col id="login_id">${xmlEscape(loginId)}</Col>
                         </Row>
                     </Rows>
@@ -967,6 +957,175 @@ class EasyShopRepository(private val context: Context) {
             </Root>
         """.trimIndent()
     }
+
+    private fun buildTpoe201S11Xml(
+        memberId: String,
+        loginId: String,
+        session: SessionParams
+    ): String {
+        return """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <Root xmlns="http://www.nexacroplatform.com/platform/dataset">
+                ${buildCommonParametersXml(
+            argPgmId = "Login",
+            memberId = memberId,
+            session = session
+        )}
+                <Dataset id="dsInData">
+                    <ColumnInfo>
+                        <Column id="SvcId" type="STRING" size="256"/>
+                        <Column id="func_cd" type="STRING" size="256"/>
+                        <Column id="login_id" type="STRING" size="256"/>
+                    </ColumnInfo>
+                    <Rows>
+                        <Row>
+                            <Col id="SvcId">TPOE201S11</Col>
+                            <Col id="func_cd">0</Col>
+                            <Col id="login_id">${xmlEscape(loginId)}</Col>
+                        </Row>
+                    </Rows>
+                </Dataset>
+            </Root>
+        """.trimIndent()
+    }
+
+    private fun buildTcmm100S03Xml(
+        memberId: String,
+        session: SessionParams
+    ): String {
+        return """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <Root xmlns="http://www.nexacroplatform.com/platform/dataset">
+                ${buildCommonParametersXml(
+            argPgmId = "div_Work",
+            memberId = memberId,
+            session = session
+        )}
+                <Dataset id="dsInData">
+                    <ColumnInfo>
+                        <Column id="SvcId" type="STRING" size="256"/>
+                        <Column id="rowCnt" type="STRING" size="256"/>
+                        <Column id="func_cd" type="STRING" size="256"/>
+                        <Column id="mbr_id" type="STRING" size="256"/>
+                        <Column id="pgm_id" type="STRING" size="256"/>
+                        <Column id="fst_rgtr_id" type="STRING" size="256"/>
+                        <Column id="lst_updr_id" type="STRING" size="256"/>
+                        <Column id="url_path" type="STRING" size="256"/>
+                    </ColumnInfo>
+                    <Rows>
+                        <Row>
+                            <Col id="SvcId">TCMM100S03</Col>
+                            <Col id="rowCnt">1</Col>
+                            <Col id="func_cd">1</Col>
+                            <Col id="mbr_id">${xmlEscape(memberId)}</Col>
+                            <Col id="pgm_id">WESS102T01</Col>
+                            <Col id="fst_rgtr_id">${xmlEscape(memberId)}</Col>
+                            <Col id="lst_updr_id">${xmlEscape(memberId)}</Col>
+                            <Col id="url_path">SEO</Col>
+                        </Row>
+                    </Rows>
+                </Dataset>
+            </Root>
+        """.trimIndent()
+    }
+
+    private fun buildTcmm001S10Xml(
+        memberId: String,
+        menuId: String,
+        autId: String,
+        session: SessionParams
+    ): String {
+        return """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <Root xmlns="http://www.nexacroplatform.com/platform/dataset">
+                ${buildCommonParametersXml(
+            argPgmId = "div_Work",
+            memberId = memberId,
+            session = session
+        )}
+                <Dataset id="dsInData">
+                    <ColumnInfo>
+                        <Column id="SvcId" type="STRING" size="256"/>
+                        <Column id="menu_id" type="STRING" size="256"/>
+                        <Column id="aut_id" type="STRING" size="256"/>
+                    </ColumnInfo>
+                    <Rows>
+                        <Row>
+                            <Col id="SvcId">TCMM001S10</Col>
+                            <Col id="menu_id">${xmlEscape(menuId)}</Col>
+                            <Col id="aut_id">${xmlEscape(autId)}</Col>
+                        </Row>
+                    </Rows>
+                </Dataset>
+            </Root>
+        """.trimIndent()
+    }
+
+    private fun buildTcmm001S03Xml(
+        memberId: String,
+        autId: String,
+        session: SessionParams
+    ): String {
+        return """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <Root xmlns="http://www.nexacroplatform.com/platform/dataset">
+                ${buildCommonParametersXml(
+            argPgmId = "div_Work",
+            memberId = memberId,
+            session = session
+        )}
+                <Dataset id="dsInData">
+                    <ColumnInfo>
+                        <Column id="SvcId" type="STRING" size="256"/>
+                        <Column id="aut_id" type="STRING" size="256"/>
+                    </ColumnInfo>
+                    <Rows>
+                        <Row>
+                            <Col id="SvcId">TCMM001S03</Col>
+                            <Col id="aut_id">${xmlEscape(autId)}</Col>
+                        </Row>
+                    </Rows>
+                </Dataset>
+            </Root>
+        """.trimIndent()
+    }
+
+    private fun buildTmcm990S01Xml(
+        memberId: String,
+        session: SessionParams
+    ): String {
+        return """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <Root xmlns="http://www.nexacroplatform.com/platform/dataset">
+                ${buildCommonParametersXml(
+            argPgmId = "MDIFrame",
+            memberId = memberId,
+            session = session
+        )}
+                <Dataset id="dsInData">
+                    <ColumnInfo>
+                        <Column id="SvcId" type="STRING" size="256"/>
+                        <Column id="login_id" type="STRING" size="10"/>
+                        <Column id="menu_id" type="STRING" size="20"/>
+                        <Column id="aply_sta_dtm" type="STRING" size="14"/>
+                        <Column id="aply_end_dtm" type="STRING" size="14"/>
+                        <Column id="login_typ_cd" type="STRING" size="3"/>
+                        <Column id="fst_rgtr_id" type="STRING" size="10"/>
+                        <Column id="login_mthd_cd" type="STRING" size="1"/>
+                    </ColumnInfo>
+                    <Rows>
+                        <Row>
+                            <Col id="SvcId">TMCM990S01</Col>
+                            <Col id="login_id">${xmlEscape(memberId)}</Col>
+                            <Col id="menu_id">1000007726</Col>
+                            <Col id="login_mthd_cd">5</Col>
+                        </Row>
+                    </Rows>
+                </Dataset>
+            </Root>
+        """.trimIndent()
+    }
+
 
     private fun buildMenuInitXml(
         memberId: String,
@@ -1222,14 +1381,6 @@ class EasyShopRepository(private val context: Context) {
         return ""
     }
 
-    private fun resolveKnownAutId(userId: String, memberId: String): String {
-        // 실서비스 응답(HAR)에서 확인한 계정별 aut_id fallback.
-        if (userId.equals("CAFEMNW2", ignoreCase = true) && memberId == "1100457733") {
-            return "1000020177"
-        }
-        return ""
-    }
-
     private fun loadSessionParams(http: HttpClient): SessionParams {
         val url = EasyShopConfig.CALL_SERVICE_URL.toHttpUrl()
         val cookies = http.cookiesFor(url)
@@ -1241,7 +1392,7 @@ class EasyShopRepository(private val context: Context) {
             diff.coerceAtLeast(0L).toString()
         }
         return SessionParams(
-            clientTimeOffset = byName["clientTimeOffset"].orEmpty().ifBlank { "55" },
+            clientTimeOffset = byName["clientTimeOffset"].orEmpty().ifBlank { "66" },
             remainTime = remainTime,
             latestTouch = latestTouch,
             sessionExpiry = sessionExpiry
@@ -1344,15 +1495,6 @@ class EasyShopRepository(private val context: Context) {
         val m = digits.substring(4, 6)
         val d = digits.substring(6, 8)
         return "$y-$m-$d"
-    }
-
-    private fun parseDateYYYYMMDD(raw: String): LocalDate? {
-        val digits = raw.filter { it.isDigit() }
-        if (digits.length < 8) return null
-        val y = digits.substring(0, 4).toIntOrNull() ?: return null
-        val m = digits.substring(4, 6).toIntOrNull() ?: return null
-        val d = digits.substring(6, 8).toIntOrNull() ?: return null
-        return runCatching { LocalDate.of(y, m, d) }.getOrNull()
     }
 
     private fun extractDatasetRows(xml: String, datasetId: String): List<String> {
