@@ -8,25 +8,26 @@ import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.example.vmmswidget.R
 import com.example.vmmswidget.data.HolidayCalendar
-import com.example.vmmswidget.data.db.SalesEntity
+import com.example.vmmswidget.data.db.EasyShopSalesEntity
 import java.time.LocalDate
 import java.time.DayOfWeek
 import java.time.format.DateTimeFormatter
 
-class DailySalesAdapter(
-    private val items: MutableList<SalesEntity>
-) : RecyclerView.Adapter<DailySalesAdapter.VH>() {
+class EasyShopDailySalesAdapter(
+    private val items: MutableList<EasyShopSalesEntity>
+) : RecyclerView.Adapter<EasyShopDailySalesAdapter.VH>() {
 
     private val holidayCache = mutableMapOf<Int, Set<LocalDate>>()
 
     class VH(view: View) : RecyclerView.ViewHolder(view) {
-        val date: TextView = view.findViewById(R.id.col_sales_date)
-        val amount: TextView = view.findViewById(R.id.col_sales_amount)
+        val date: TextView = view.findViewById(R.id.col_easy_date)
+        val sales: TextView = view.findViewById(R.id.col_easy_sales)
+        val deposit: TextView = view.findViewById(R.id.col_easy_deposit)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
         val view = LayoutInflater.from(parent.context)
-            .inflate(R.layout.item_daily_sales, parent, false)
+            .inflate(R.layout.item_easyshop_daily_sales, parent, false)
         return VH(view)
     }
 
@@ -37,14 +38,15 @@ class DailySalesAdapter(
         val parsedDate = runCatching { LocalDate.parse(row.date) }.getOrNull()
         val dateText = parsedDate?.format(DateTimeFormatter.ofPattern("M/d")) ?: row.date
         holder.date.text = dateText
-        holder.amount.text = String.format("%,d원", row.amount)
+        holder.sales.text = String.format("%,d원", row.amount)
+        holder.deposit.text = String.format("%,d원", row.depositAmount)
         val isWeekendOrHoliday = parsedDate?.let { isWeekendOrHoliday(it) } == true
         holder.itemView.setBackgroundColor(
             if (isWeekendOrHoliday) 0xFFF7DADA.toInt() else Color.TRANSPARENT
         )
     }
 
-    fun submit(newItems: List<SalesEntity>) {
+    fun submit(newItems: List<EasyShopSalesEntity>) {
         items.clear()
         items.addAll(newItems)
         notifyDataSetChanged()

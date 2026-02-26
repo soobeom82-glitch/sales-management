@@ -15,6 +15,8 @@ class SalesChartView @JvmOverloads constructor(
 
     private var dates: List<LocalDate> = emptyList()
     private var values: List<Int> = emptyList()
+    private var secondaryValues: List<Int> = emptyList()
+    private var secondaryLabel: String = "입금"
     private var today: LocalDate? = null
     private var animProgress: Float = 1f
 
@@ -31,12 +33,35 @@ class SalesChartView @JvmOverloads constructor(
         textSize = 36f // Y-axis label size (keep)
     }
     private val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFF4A6FA5.toInt()
+        color = 0xFF3F6EA7.toInt()
         style = Paint.Style.FILL
     }
     private val barPaintToday = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFF9BB5D6.toInt()
+        color = 0xFF5F8FC8.toInt()
         style = Paint.Style.FILL
+    }
+    private val secondaryBarPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFFE7B66B.toInt()
+        style = Paint.Style.FILL
+    }
+    private val secondaryBarPaintToday = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFFF0C98F.toInt()
+        style = Paint.Style.FILL
+    }
+    private val salesBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFF2D5F97.toInt()
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
+    }
+    private val secondaryBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFFC58B32.toInt()
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
+    }
+    private val secondaryHatchPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0x55A56B14
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
     }
     private val avgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFF222222.toInt()
@@ -48,6 +73,11 @@ class SalesChartView @JvmOverloads constructor(
         color = 0xFFF7DADA.toInt()
         style = Paint.Style.FILL
     }
+    private val legendPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFF666666.toInt()
+        textSize = 40f
+    }
+
     fun setData(
         dates: List<LocalDate>,
         values: List<Int>,
@@ -55,7 +85,14 @@ class SalesChartView @JvmOverloads constructor(
     ) {
         this.dates = dates
         this.values = values
+        this.secondaryValues = emptyList()
         this.today = today
+        invalidate()
+    }
+
+    fun setSecondaryData(values: List<Int>, label: String = "입금") {
+        secondaryValues = values
+        secondaryLabel = label
         invalidate()
     }
 
@@ -73,16 +110,28 @@ class SalesChartView @JvmOverloads constructor(
         val paddingTop = 26f
         val paddingRight = 20f
 
+        val hasSecondary = secondaryValues.size == values.size
+        val legendAreaHeight = if (hasSecondary) 64f else 0f
+        val plotTop = paddingTop + legendAreaHeight
         val w = width - paddingLeft - paddingRight
-        val h = height - paddingTop - paddingBottom
-
-        val rawMax = values.maxOrNull() ?: 1
+        val h = (height - plotTop - paddingBottom).coerceAtLeast(1f)
+        val rawMax = max(
+            values.maxOrNull() ?: 1,
+            if (hasSecondary) secondaryValues.maxOrNull() ?: 1 else 1
+        )
         val rounded = ((rawMax + 500) / 1000) * 1000
         val maxValue = max(1, rounded + 15_000)
         val barCount = values.size
         val gap = 24f
         val bandWidth = ((w - gap * (barCount - 1)) / barCount).coerceAtLeast(8f)
-        val barWidth = (bandWidth * 0.70f).coerceAtLeast(8f)
+        val innerGap = if (hasSecondary) 1f else 0f
+        val pairBarWidth = if (hasSecondary) {
+            ((bandWidth - innerGap) / 2f).coerceAtLeast(4f)
+        } else {
+            0f
+        }
+        val secondaryBarWidth = if (hasSecondary) pairBarWidth else 0f
+        val salesBarWidth = if (hasSecondary) pairBarWidth else (bandWidth * 0.70f).coerceAtLeast(8f)
         val startX = paddingLeft
         val chartLeft = paddingLeft
         val chartRight = paddingLeft + w
@@ -99,7 +148,7 @@ class SalesChartView @JvmOverloads constructor(
                 val bandLeft = startX + i * (bandWidth + gap)
                 val left = bandLeft
                 val right = bandLeft + bandWidth
-                canvas.drawRect(left, paddingTop, right, paddingTop + h, weekendBgPaint)
+                canvas.drawRect(left, plotTop, right, plotTop + h, weekendBgPaint)
             }
         }
 
@@ -108,30 +157,56 @@ class SalesChartView @JvmOverloads constructor(
         val maxGrid = ((maxValue + gridStep - 1) / gridStep) * gridStep
         var v = 0
         while (v <= maxGrid) {
-            val y = paddingTop + h - (h * v / maxGrid.toFloat())
+            val y = plotTop + h - (h * v / maxGrid.toFloat())
             canvas.drawLine(chartLeft, y, chartRight, y, gridPaint)
             v += gridStep
         }
 
         // average line for 7-day values
         val avg = values.average().toFloat()
-        val avgY = paddingTop + h - (h * (avg / maxGrid.toFloat()))
+        val avgY = plotTop + h - (h * (avg / maxGrid.toFloat()))
         canvas.drawLine(chartLeft, avgY, chartRight, avgY, avgPaint)
+
+        if (hasSecondary) {
+            val legendY = paddingTop + 46f
+            var legendX = chartLeft + 8f
+            val markW = 24f
+            val markH = 14f
+            val markToTextGap = 16f
+            val itemGap = 56f
+            canvas.drawRect(legendX, legendY - markH, legendX + markW, legendY, secondaryBarPaint)
+            canvas.drawRect(legendX, legendY - markH, legendX + markW, legendY, secondaryBorderPaint)
+            drawHatch(
+                canvas = canvas,
+                left = legendX,
+                top = legendY - markH,
+                right = legendX + markW,
+                bottom = legendY
+            )
+            legendX += markW + markToTextGap
+            canvas.drawText(secondaryLabel, legendX, legendY, legendPaint)
+            legendX += legendPaint.measureText(secondaryLabel) + itemGap
+
+            canvas.drawRect(legendX, legendY - markH, legendX + markW, legendY, barPaint)
+            canvas.drawRect(legendX, legendY - markH, legendX + markW, legendY, salesBorderPaint)
+            legendX += markW + markToTextGap
+            canvas.drawText("매출", legendX, legendY, legendPaint)
+        }
 
         // Y axis
         canvas.drawLine(
             chartLeft,
-            paddingTop,
+            plotTop,
             chartLeft,
-            paddingTop + h,
+            plotTop + h,
             axisPaint
         )
         // X axis
         canvas.drawLine(
             chartLeft,
-            paddingTop + h,
+            plotTop + h,
             chartRight,
-            paddingTop + h,
+            plotTop + h,
             axisPaint
         )
 
@@ -140,7 +215,7 @@ class SalesChartView @JvmOverloads constructor(
         val labelAreaWidth = paddingLeft - 12f
         val labelX = 8f
         while (v <= maxGrid) {
-            val y = paddingTop + h - (h * v / maxGrid.toFloat())
+            val y = plotTop + h - (h * v / maxGrid.toFloat())
             val text = String.format("%,d", v)
             val textWidth = labelPaint.measureText(text)
             val x = labelX + (labelAreaWidth - textWidth) / 2f
@@ -149,16 +224,46 @@ class SalesChartView @JvmOverloads constructor(
         }
 
         for (i in 0 until barCount) {
-            val v = values[i]
-            val barHeight = h * v / maxGrid.toFloat() * animProgress
+            val salesValue = values[i]
             val bandLeft = startX + i * (bandWidth + gap)
-            val left = bandLeft + (bandWidth - barWidth) / 2f
-            val top = paddingTop + (h - barHeight)
-            val right = left + barWidth
-            val bottom = paddingTop + h
+            val bottom = plotTop + h
             val d = dates.getOrNull(i)
-            val paint = if (d != null && d == today) barPaintToday else barPaint
-            canvas.drawRect(left, top, right, bottom, paint)
+
+            val salesPaint = if (d != null && d == today) barPaintToday else barPaint
+            val depositPaint = if (d != null && d == today) secondaryBarPaintToday else secondaryBarPaint
+            if (hasSecondary) {
+                val depositValue = secondaryValues[i]
+                val clusterWidth = secondaryBarWidth + salesBarWidth + innerGap
+                val clusterLeft = bandLeft + (bandWidth - clusterWidth) / 2f
+
+                val depositHeight = h * depositValue / maxGrid.toFloat() * animProgress
+                val depositTop = plotTop + (h - depositHeight)
+                val depositLeft = clusterLeft
+                val depositRight = depositLeft + secondaryBarWidth
+                canvas.drawRect(depositLeft, depositTop, depositRight, bottom, depositPaint)
+                canvas.drawRect(depositLeft, depositTop, depositRight, bottom, secondaryBorderPaint)
+                drawHatch(
+                    canvas = canvas,
+                    left = depositLeft,
+                    top = depositTop,
+                    right = depositRight,
+                    bottom = bottom
+                )
+
+                val salesHeight = h * salesValue / maxGrid.toFloat() * animProgress
+                val salesTop = plotTop + (h - salesHeight)
+                val salesLeft = depositRight + innerGap
+                val salesRight = salesLeft + salesBarWidth
+                canvas.drawRect(salesLeft, salesTop, salesRight, bottom, salesPaint)
+                canvas.drawRect(salesLeft, salesTop, salesRight, bottom, salesBorderPaint)
+            } else {
+                val salesHeight = h * salesValue / maxGrid.toFloat() * animProgress
+                val left = bandLeft + (bandWidth - salesBarWidth) / 2f
+                val top = plotTop + (h - salesHeight)
+                val right = left + salesBarWidth
+                canvas.drawRect(left, top, right, bottom, salesPaint)
+                canvas.drawRect(left, top, right, bottom, salesBorderPaint)
+            }
 
             // X-axis label (day of month)
             val day = dates.getOrNull(i)?.dayOfWeek?.let { dow ->
@@ -186,8 +291,28 @@ class SalesChartView @JvmOverloads constructor(
             // X-axis label size: 1.3x of base(36 -> 46.8)
             val xAxisPaint = Paint(labelPaint).apply { textSize = 47f }
             val xDayWidth = xAxisPaint.measureText(dayText)
-            val dayX2 = left + (barWidth - xDayWidth) / 2f
+            val dayX2 = bandLeft + (bandWidth - xDayWidth) / 2f
             canvas.drawText(dayText, dayX2, bottom + 40f, xAxisPaint)
         }
+    }
+
+    private fun drawHatch(
+        canvas: Canvas,
+        left: Float,
+        top: Float,
+        right: Float,
+        bottom: Float
+    ) {
+        if (right <= left || bottom <= top) return
+        val height = bottom - top
+        val step = 8f
+        canvas.save()
+        canvas.clipRect(left, top, right, bottom)
+        var x = left - height
+        while (x < right) {
+            canvas.drawLine(x, bottom, x + height, top, secondaryHatchPaint)
+            x += step
+        }
+        canvas.restore()
     }
 }

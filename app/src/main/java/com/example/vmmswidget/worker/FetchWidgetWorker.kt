@@ -84,13 +84,16 @@ class FetchWidgetWorker(
         val amountValue = sales?.amountValue ?: 0
         val db = AppDatabase.get(appContext)
         if (sales != null) {
+            val today = LocalDate.now()
             db.salesDao().upsert(
                 SalesEntity(
-                    date = LocalDate.now().toString(),
+                    date = today.toString(),
                     amount = amountValue,
                     createdAt = System.currentTimeMillis()
                 )
             )
+            // 1년(오늘 포함)만 유지
+            db.salesDao().deleteOlderThan(today.minusDays(365).toString())
         }
         logLast7(db)
         logMissingDays(db)

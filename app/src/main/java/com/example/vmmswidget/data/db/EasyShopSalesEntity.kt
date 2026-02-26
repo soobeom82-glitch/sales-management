@@ -7,5 +7,6 @@ import androidx.room.PrimaryKey
 data class EasyShopSalesEntity(
     @PrimaryKey val date: String, // yyyy-MM-dd
     val amount: Int,
+    val depositAmount: Int = 0,
     val createdAt: Long
 )

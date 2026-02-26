@@ -41,12 +41,16 @@ class SalesFragment : Fragment() {
     private var vmmsAnimator: ValueAnimator? = null
     private var dailySalesDialog: AlertDialog? = null
     private var dailySalesLoadJob: Job? = null
+    private var easyDailySalesDialog: AlertDialog? = null
+    private var easyDailySalesLoadJob: Job? = null
 
     // EasyShop state
     private var easyDates: List<LocalDate> = emptyList()
     private var easyValues: List<Int> = emptyList()
+    private var easyDepositValues: List<Int> = emptyList()
     private var easyDiff: Int = 0
     private var easyTodayTotal: Int = 0
+    private var easyTodayDeposit: Int = 0
     private var easyTodayShares: List<TransactionsRepository.TodayItemShare> = emptyList()
     private var easyAnimator: ValueAnimator? = null
 
@@ -60,6 +64,7 @@ class SalesFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         bindSubTabs(view)
+        applySalesSubtabRouteIfAny(view)
         initHeaderDates(view)
         initClickActions(view)
         WorkScheduler.scheduleEasyShopDailyRecord(requireContext())
@@ -76,6 +81,9 @@ class SalesFragment : Fragment() {
     private fun initClickActions(root: View) {
         root.findViewById<SalesChartView>(R.id.sales_chart).setOnClickListener {
             showDailySalesDialog()
+        }
+        root.findViewById<SalesChartView>(R.id.easyshop_sales_chart).setOnClickListener {
+            showEasyShopDailySalesDialog()
         }
     }
 
@@ -127,7 +135,7 @@ class SalesFragment : Fragment() {
 
     private fun loadEasyShopData(root: View) {
         val chart = root.findViewById<SalesChartView>(R.id.easyshop_sales_chart)
-        val pie = root.findViewById<TodayPieChartView>(R.id.easyshop_pie_chart)
+        val compare = root.findViewById<TodayCompareBarChartView>(R.id.easyshop_compare_chart)
         val range = root.findViewById<TextView>(R.id.text_easyshop_range)
         val total = root.findViewById<TextView>(R.id.text_easyshop_total)
         val empty = root.findViewById<TextView>(R.id.text_easyshop_empty)
@@ -135,17 +143,19 @@ class SalesFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             val today = LocalDate.now()
             val appContext = requireContext().applicationContext
-            val (historyRows, todayResult) = withContext(Dispatchers.IO) {
+            val (historyRows, todayResult, todayDepositAmount) = withContext(Dispatchers.IO) {
                 val repo = EasyShopRepository(appContext)
                 val dao = AppDatabase.get(appContext).easyShopSalesDao()
-                val keepFrom = today.minusDays(14).toString()
+                val keepFrom = today.minusDays(365).toString()
+                val historyFrom = today.minusDays(14)
+                val historyTo = today.minusDays(1)
 
                 // 초기 비어있는 구간은 한 번에 보정해 15일(오늘 제외) 데이터를 채운다.
                 var history = dao.getAll()
                 if (history.size < 14) {
                     val backfillResult = repo.fetchSales(
-                        from = today.minusDays(14),
-                        to = today.minusDays(1)
+                        from = historyFrom,
+                        to = historyTo
                     )
                     if (backfillResult.success) {
                         val amountByDate = backfillResult.records
@@ -166,17 +176,40 @@ class SalesFragment : Fragment() {
                     }
                 }
 
+                val depositBackfill = repo.fetchDepositAmounts(historyFrom, historyTo)
+                if (depositBackfill.success && depositBackfill.amountsByDate.isNotEmpty()) {
+                    history = dao.getAll()
+                    val historyByDate = history.associateBy { it.date }
+                    val now = System.currentTimeMillis()
+                    depositBackfill.amountsByDate.forEach { (date, amount) ->
+                        val existing = historyByDate[date]
+                        dao.upsert(
+                            com.example.vmmswidget.data.db.EasyShopSalesEntity(
+                                date = date,
+                                amount = existing?.amount ?: 0,
+                                depositAmount = amount,
+                                createdAt = now
+                            )
+                        )
+                    }
+                }
+
                 dao.deleteOlderThan(keepFrom)
                 history = dao.getAll()
-                Pair(history, repo.fetchTodaySales())
+
+                val todayDeposit = repo.fetchTodayDepositAmount(today)
+                val todayDepositAmount = if (todayDeposit.success) todayDeposit.amount else 0
+                Triple(history, repo.fetchTodaySales(), todayDepositAmount)
             }
             if (!isAdded) return@launch
 
             val amountByDate = historyRows.associate { it.date to it.amount }
+            val depositByDate = historyRows.associate { it.date to it.depositAmount }
 
             easyDates = (7L downTo 1L).map { today.minusDays(it) }
             val prevDates = (14L downTo 8L).map { today.minusDays(it) }
             easyValues = easyDates.map { d -> amountByDate[d.toString()] ?: 0 }
+            easyDepositValues = easyDates.map { d -> depositByDate[d.toString()] ?: 0 }
 
             val easyTotal = easyValues.sum()
             val easyPrevTotal = prevDates.sumOf { d -> amountByDate[d.toString()] ?: 0 }
@@ -204,6 +237,7 @@ class SalesFragment : Fragment() {
                 easyTodayShares = emptyList()
                 easyTodayTotal = 0
             }
+            easyTodayDeposit = todayDepositAmount
 
             val fmt = DateTimeFormatter.ofPattern("yyyy.MM.dd")
             range.text = if (easyDates.isNotEmpty()) {
@@ -226,13 +260,14 @@ class SalesFragment : Fragment() {
             }
 
             chart.setData(easyDates, easyValues, today)
+            chart.setSecondaryData(easyDepositValues)
             chart.setAnimationProgress(0f)
-            pie.setData(easyTodayTotal, easyTodayShares)
-            pie.setAnimationProgress(0f)
+            compare.setData(easyTodayDeposit, easyTodayTotal)
+            compare.setAnimationProgress(0f)
             easyAnimator?.cancel()
-            easyAnimator = startAnimation(
+            easyAnimator = startEasyAnimation(
                 chart = chart,
-                pieChart = pie,
+                compareChart = compare,
                 totalText = total,
                 totalAmount = easyTotal,
                 diff = easyDiff
@@ -274,6 +309,7 @@ class SalesFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         val root = view ?: return
+        applySalesSubtabRouteIfAny(root)
         if (isVmmsTabSelected) {
             val chart = root.findViewById<SalesChartView>(R.id.sales_chart)
             val pie = root.findViewById<TodayPieChartView>(R.id.today_pie_chart)
@@ -288,16 +324,25 @@ class SalesFragment : Fragment() {
             }
         } else {
             val chart = root.findViewById<SalesChartView>(R.id.easyshop_sales_chart)
-            val pie = root.findViewById<TodayPieChartView>(R.id.easyshop_pie_chart)
+            val compare = root.findViewById<TodayCompareBarChartView>(R.id.easyshop_compare_chart)
             val total = root.findViewById<TextView>(R.id.text_easyshop_total)
             if (easyDates.isNotEmpty()) {
                 chart.setData(easyDates, easyValues, LocalDate.now())
+                chart.setSecondaryData(easyDepositValues)
                 chart.setAnimationProgress(0f)
-                pie.setData(easyTodayTotal, easyTodayShares)
-                pie.setAnimationProgress(0f)
+                compare.setData(easyTodayDeposit, easyTodayTotal)
+                compare.setAnimationProgress(0f)
                 easyAnimator?.cancel()
-                easyAnimator = startAnimation(chart, pie, total, easyValues.sum(), easyDiff)
+                easyAnimator = startEasyAnimation(chart, compare, total, easyValues.sum(), easyDiff)
             }
+        }
+    }
+
+    private fun applySalesSubtabRouteIfAny(root: View) {
+        val main = activity as? MainActivity ?: return
+        when (main.consumeSalesSubtabTarget()) {
+            MainActivity.SALES_SUBTAB_EASYSHOP -> setSubTab(root, false)
+            MainActivity.SALES_SUBTAB_VMMS -> setSubTab(root, true)
         }
     }
 
@@ -334,6 +379,39 @@ class SalesFragment : Fragment() {
         dialog.show()
     }
 
+    private fun showEasyShopDailySalesDialog() {
+        if (easyDailySalesDialog?.isShowing == true) return
+        val dialogView = layoutInflater.inflate(R.layout.dialog_easyshop_daily_sales, null, false)
+        val recycler = dialogView.findViewById<RecyclerView>(R.id.recycler_easyshop_daily_sales)
+        val emptyText = dialogView.findViewById<TextView>(R.id.text_easyshop_daily_sales_empty)
+        val close = dialogView.findViewById<android.widget.Button>(R.id.button_easyshop_daily_sales_close)
+        val adapter = EasyShopDailySalesAdapter(mutableListOf())
+        recycler.layoutManager = LinearLayoutManager(requireContext())
+        recycler.adapter = adapter
+
+        val dialog = AlertDialog.Builder(requireContext())
+            .setView(dialogView)
+            .create()
+        easyDailySalesDialog = dialog
+        close.setOnClickListener { dialog.dismiss() }
+        dialog.setOnDismissListener {
+            easyDailySalesLoadJob?.cancel()
+            easyDailySalesLoadJob = null
+            if (easyDailySalesDialog === dialog) easyDailySalesDialog = null
+        }
+
+        easyDailySalesLoadJob?.cancel()
+        easyDailySalesLoadJob = viewLifecycleOwner.lifecycleScope.launch {
+            val all = withContext(Dispatchers.IO) {
+                AppDatabase.get(requireContext()).easyShopSalesDao().getAll()
+            }.sortedByDescending { it.date }
+            if (!dialog.isShowing) return@launch
+            adapter.submit(all)
+            emptyText.visibility = if (all.isEmpty()) View.VISIBLE else View.GONE
+        }
+        dialog.show()
+    }
+
     private fun startAnimation(
         chart: SalesChartView,
         pieChart: TodayPieChartView,
@@ -348,6 +426,28 @@ class SalesFragment : Fragment() {
                 val f = anim.animatedValue as Float
                 chart.setAnimationProgress(f)
                 pieChart.setAnimationProgress(f)
+                val animatedTotal = (totalAmount * f).toInt()
+                val animatedDiff = (kotlin.math.abs(diff) * f).toInt()
+                totalText.text = makeTotalText(animatedTotal, animatedDiff, diff)
+            }
+            start()
+        }
+    }
+
+    private fun startEasyAnimation(
+        chart: SalesChartView,
+        compareChart: TodayCompareBarChartView,
+        totalText: TextView,
+        totalAmount: Int,
+        diff: Int
+    ): ValueAnimator {
+        return ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 2000
+            interpolator = DecelerateInterpolator()
+            addUpdateListener { anim ->
+                val f = anim.animatedValue as Float
+                chart.setAnimationProgress(f)
+                compareChart.setAnimationProgress(f)
                 val animatedTotal = (totalAmount * f).toInt()
                 val animatedDiff = (kotlin.math.abs(diff) * f).toInt()
                 totalText.text = makeTotalText(animatedTotal, animatedDiff, diff)
@@ -406,6 +506,10 @@ class SalesFragment : Fragment() {
         dailySalesLoadJob = null
         dailySalesDialog?.dismiss()
         dailySalesDialog = null
+        easyDailySalesLoadJob?.cancel()
+        easyDailySalesLoadJob = null
+        easyDailySalesDialog?.dismiss()
+        easyDailySalesDialog = null
         super.onDestroyView()
     }
 }

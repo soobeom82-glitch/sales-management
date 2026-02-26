@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.graphics.Typeface
 import android.widget.Toast
 import android.widget.TextView
+import android.content.Intent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.OnBackPressedCallback
 import com.example.vmmswidget.R
@@ -13,12 +14,13 @@ import androidx.viewpager2.widget.ViewPager2
 
 class MainActivity : AppCompatActivity() {
     private var lastBackPressedAt: Long = 0L
+    private lateinit var viewPager: ViewPager2
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        val viewPager = findViewById<ViewPager2>(R.id.view_pager)
+        viewPager = findViewById(R.id.view_pager)
         val tabLayout = findViewById<TabLayout>(R.id.tab_layout)
 
         viewPager.adapter = MainPagerAdapter(this)
@@ -37,8 +39,7 @@ class MainActivity : AppCompatActivity() {
                 gravity = android.view.Gravity.CENTER
             }
         }.attach()
-        val targetTab = intent?.getIntExtra(EXTRA_TAB_INDEX, 0) ?: 0
-        viewPager.setCurrentItem(targetTab, false)
+        applyIntentRoute(intent)
         tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
             override fun onTabSelected(tab: TabLayout.Tab) {
                 (tab.customView as? TextView)?.setTypeface(Typeface.DEFAULT_BOLD)
@@ -68,8 +69,28 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        applyIntentRoute(intent)
+    }
+
+    fun consumeSalesSubtabTarget(): String? {
+        val target = intent?.getStringExtra(EXTRA_SALES_SUBTAB) ?: return null
+        intent?.removeExtra(EXTRA_SALES_SUBTAB)
+        return target
+    }
+
+    private fun applyIntentRoute(routeIntent: Intent?) {
+        val targetTab = routeIntent?.getIntExtra(EXTRA_TAB_INDEX, viewPager.currentItem) ?: viewPager.currentItem
+        viewPager.setCurrentItem(targetTab, false)
+    }
+
     companion object {
         const val EXTRA_TAB_INDEX = "extra_tab_index"
+        const val EXTRA_SALES_SUBTAB = "extra_sales_subtab"
+        const val SALES_SUBTAB_VMMS = "vmms"
+        const val SALES_SUBTAB_EASYSHOP = "easyshop"
         private const val BACK_PRESS_INTERVAL_MS = 2000L
     }
 }

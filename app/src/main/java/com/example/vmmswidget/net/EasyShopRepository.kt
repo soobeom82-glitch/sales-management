@@ -49,6 +49,18 @@ class EasyShopRepository(private val context: Context) {
         val totalAmount: Int
     )
 
+    data class DepositFetchResult(
+        val success: Boolean,
+        val message: String,
+        val amount: Int
+    )
+
+    data class DepositRangeResult(
+        val success: Boolean,
+        val message: String,
+        val amountsByDate: Map<String, Int>
+    )
+
     private data class SessionParams(
         val clientTimeOffset: String,
         val remainTime: String,
@@ -489,6 +501,112 @@ class EasyShopRepository(private val context: Context) {
         )
     }
 
+    suspend fun fetchDepositAmounts(
+        from: LocalDate,
+        to: LocalDate
+    ): DepositRangeResult = withContext(Dispatchers.IO) {
+        val auth = AuthStore(context)
+        val userId = auth.getEasyShopId().orEmpty().trim()
+        val userPw = auth.getEasyShopPassword().orEmpty().trim()
+        if (userId.isBlank() || userPw.isBlank()) {
+            return@withContext DepositRangeResult(
+                success = false,
+                message = "EasyShop 로그인 정보가 비어 있습니다.",
+                amountsByDate = emptyMap()
+            )
+        }
+
+        val loginResult = verifyLogin(userId, userPw)
+        if (!loginResult.success) {
+            return@withContext DepositRangeResult(
+                success = false,
+                message = loginResult.message,
+                amountsByDate = emptyMap()
+            )
+        }
+
+        val memberId = auth.getEasyShopMemberId().orEmpty().trim()
+        if (memberId.isBlank()) {
+            return@withContext DepositRangeResult(
+                success = false,
+                message = "EasyShop 회원 식별값(mbr_id)을 확인하지 못했습니다.",
+                amountsByDate = emptyMap()
+            )
+        }
+
+        val http = HttpClient(context)
+        val client = http.client
+        val url = EasyShopConfig.CALL_SERVICE_URL.toHttpUrl()
+        val session = ensureEasyShopSessionCookies(http, url, loadSessionParams(http))
+        val xml = buildTess501S03Xml(
+            memberId = memberId,
+            loginId = userId,
+            session = session
+        )
+
+        val body = executeCallService(
+            client = client,
+            url = url,
+            bodyXml = xml,
+            label = "TESS501S03"
+        ) ?: return@withContext DepositRangeResult(
+            success = false,
+            message = "EasyShop 입금 내역 조회 실패",
+            amountsByDate = emptyMap()
+        )
+
+        val errorCode = parseParameter(body, "ErrorCode")
+        val errorMsg = parseParameter(body, "ErrorMsg")
+        if (errorCode.isNotBlank() && errorCode != "0") {
+            return@withContext DepositRangeResult(
+                success = false,
+                message = "EasyShop 입금 내역 오류(ErrorCode=$errorCode, $errorMsg)",
+                amountsByDate = emptyMap()
+            )
+        }
+
+        val rows = extractDatasetRows(body, "data")
+        val requested = generateSequence(from) { prev ->
+            if (prev.isBefore(to)) prev.plusDays(1) else null
+        }.map { it.toString() }.toSet()
+
+        val out = linkedMapOf<String, Int>()
+        rows.forEach { row ->
+            val rawDate = parseDatasetCol(row, "pay_plan_dt")
+            val date = parseEasyShopDate(rawDate)
+            if (date.isBlank() || !requested.contains(date)) return@forEach
+
+            val amount = parseDatasetCol(row, "pay_amt")
+                .replace(",", "")
+                .toIntOrNull()
+                ?: parseDatasetCol(row, "tot_amt").replace(",", "").toIntOrNull()
+                ?: 0
+            out[date] = amount
+        }
+
+        DepositRangeResult(
+            success = true,
+            message = if (out.isEmpty()) "EasyShop 입금 내역 데이터 없음" else "EasyShop 입금 내역 조회 성공",
+            amountsByDate = out
+        )
+    }
+
+    suspend fun fetchTodayDepositAmount(date: LocalDate = LocalDate.now()): DepositFetchResult {
+        val oneDay = fetchDepositAmounts(date, date)
+        if (!oneDay.success) {
+            return DepositFetchResult(
+                success = false,
+                message = oneDay.message,
+                amount = 0
+            )
+        }
+        return DepositFetchResult(
+            success = true,
+            message = oneDay.message,
+            amount = oneDay.amountsByDate[date.toString()] ?: 0
+        )
+    }
+
     private suspend fun queryTess103Sales(
         client: OkHttpClient,
         http: HttpClient,
@@ -921,6 +1039,35 @@ class EasyShopRepository(private val context: Context) {
                         <Column id="card_typ" type="STRING" size="1"/>
                     </ColumnInfo>
                     <Rows>
+                    </Rows>
+                </Dataset>
+            </Root>
+        """.trimIndent()
+    }
+
+    private fun buildTess501S03Xml(
+        memberId: String,
+        loginId: String,
+        session: SessionParams
+    ): String {
+        return """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <Root xmlns="http://www.nexacroplatform.com/platform/dataset">
+                ${buildCommonParametersXml(
+            argPgmId = "MainFrameEs",
+            memberId = memberId,
+            session = session
+        )}
+                <Dataset id="dsInData">
+                    <ColumnInfo>
+                        <Column id="SvcId" type="STRING" size="256"/>
+                        <Column id="login_id" type="STRING" size="256"/>
+                    </ColumnInfo>
+                    <Rows>
+                        <Row>
+                            <Col id="SvcId">TESS501S03</Col>
+                            <Col id="login_id">${xmlEscape(loginId)}</Col>
+                        </Row>
                     </Rows>
                 </Dataset>
             </Root>

@@ -132,10 +132,10 @@
             android:text="2026.02.12"
             android:textSize="12sp" />
 
-        <com.example.vmmswidget.ui.TodayPieChartView
-            android:id="@+id/easyshop_pie_chart"
+        <com.example.vmmswidget.ui.TodayCompareBarChartView
+            android:id="@+id/easyshop_compare_chart"
             android:layout_width="match_parent"
-            android:layout_height="210dp"
+            android:layout_height="170dp"
             android:layout_marginTop="0dp" />
 
         <TextView
