@@ -35,7 +35,7 @@ class DailySalesAdapter(
     override fun onBindViewHolder(holder: VH, position: Int) {
         val row = items[position]
         val parsedDate = runCatching { LocalDate.parse(row.date) }.getOrNull()
-        val dateText = parsedDate?.format(DateTimeFormatter.ofPattern("M/d")) ?: row.date
+        val dateText = parsedDate?.let { formatDateWithWeekday(it) } ?: row.date
         holder.date.text = dateText
         holder.amount.text = String.format("%,d원", row.amount)
         val isWeekendOrHoliday = parsedDate?.let { isWeekendOrHoliday(it) } == true
@@ -58,5 +58,18 @@ class DailySalesAdapter(
             HolidayCalendar.holidaysForYear(date.year)
         }
         return holidays.contains(date)
+    }
+
+    private fun formatDateWithWeekday(date: LocalDate): String {
+        val day = when (date.dayOfWeek) {
+            DayOfWeek.MONDAY -> "월"
+            DayOfWeek.TUESDAY -> "화"
+            DayOfWeek.WEDNESDAY -> "수"
+            DayOfWeek.THURSDAY -> "목"
+            DayOfWeek.FRIDAY -> "금"
+            DayOfWeek.SATURDAY -> "토"
+            DayOfWeek.SUNDAY -> "일"
+        }
+        return "${date.format(DateTimeFormatter.ofPattern("M/d"))}($day)"
     }
 }

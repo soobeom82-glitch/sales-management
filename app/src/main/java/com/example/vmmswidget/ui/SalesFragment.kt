@@ -1,12 +1,14 @@
 package com.example.vmmswidget.ui
 
 import android.animation.ValueAnimator
+import android.content.Context
 import android.graphics.Color
 import android.os.Bundle
 import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.style.ForegroundColorSpan
 import android.text.style.RelativeSizeSpan
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -19,6 +21,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.vmmswidget.R
 import com.example.vmmswidget.data.db.AppDatabase
+import com.example.vmmswidget.data.db.EasyShopSalesEntity
 import com.example.vmmswidget.net.EasyShopRepository
 import com.example.vmmswidget.net.TransactionsRepository
 import com.example.vmmswidget.widget.WorkScheduler
@@ -79,10 +82,10 @@ class SalesFragment : Fragment() {
     }
 
     private fun initClickActions(root: View) {
-        root.findViewById<SalesChartView>(R.id.sales_chart).setOnClickListener {
+        root.findViewById<TextView>(R.id.text_total).setOnClickListener {
             showDailySalesDialog()
         }
-        root.findViewById<SalesChartView>(R.id.easyshop_sales_chart).setOnClickListener {
+        root.findViewById<TextView>(R.id.text_easyshop_total).setOnClickListener {
             showEasyShopDailySalesDialog()
         }
     }
@@ -143,78 +146,181 @@ class SalesFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             val today = LocalDate.now()
             val appContext = requireContext().applicationContext
-            val (historyRows, todayResult, todayDepositAmount) = withContext(Dispatchers.IO) {
-                val repo = EasyShopRepository(appContext)
-                val dao = AppDatabase.get(appContext).easyShopSalesDao()
-                val keepFrom = today.minusDays(365).toString()
-                val historyFrom = today.minusDays(14)
-                val historyTo = today.minusDays(1)
-
-                // 초기 비어있는 구간은 한 번에 보정해 15일(오늘 제외) 데이터를 채운다.
-                var history = dao.getAll()
-                if (history.size < 14) {
-                    val backfillResult = repo.fetchSales(
-                        from = historyFrom,
-                        to = historyTo
-                    )
-                    if (backfillResult.success) {
-                        val amountByDate = backfillResult.records
-                            .filterNot { it.isCanceled }
-                            .filter { it.transactionDate.isNotBlank() }
-                            .groupBy { it.transactionDate }
-                            .mapValues { (_, rows) -> rows.sumOf { it.amount } }
-                        val now = System.currentTimeMillis()
-                        amountByDate.forEach { (date, amount) ->
-                            dao.upsert(
-                                com.example.vmmswidget.data.db.EasyShopSalesEntity(
-                                    date = date,
-                                    amount = amount,
-                                    createdAt = now
-                                )
-                            )
-                        }
-                    }
-                }
-
-                val depositBackfill = repo.fetchDepositAmounts(historyFrom, historyTo)
-                if (depositBackfill.success && depositBackfill.amountsByDate.isNotEmpty()) {
-                    history = dao.getAll()
-                    val historyByDate = history.associateBy { it.date }
-                    val now = System.currentTimeMillis()
-                    depositBackfill.amountsByDate.forEach { (date, amount) ->
-                        val existing = historyByDate[date]
-                        dao.upsert(
-                            com.example.vmmswidget.data.db.EasyShopSalesEntity(
-                                date = date,
-                                amount = existing?.amount ?: 0,
-                                depositAmount = amount,
-                                createdAt = now
-                            )
-                        )
-                    }
-                }
-
-                dao.deleteOlderThan(keepFrom)
-                history = dao.getAll()
-
-                val todayDeposit = repo.fetchTodayDepositAmount(today)
-                val todayDepositAmount = if (todayDeposit.success) todayDeposit.amount else 0
-                Triple(history, repo.fetchTodaySales(), todayDepositAmount)
+            val cachedRows = withContext(Dispatchers.IO) {
+                AppDatabase.get(appContext).easyShopSalesDao().getAll()
             }
             if (!isAdded) return@launch
+            bindEasyShopChart(
+                today = today,
+                historyRows = cachedRows,
+                todayResult = null,
+                todayDepositAmount = null,
+                chart = chart,
+                compare = compare,
+                range = range,
+                total = total,
+                empty = empty,
+                animate = false,
+                showEmptyState = false
+            )
 
-            val amountByDate = historyRows.associate { it.date to it.amount }
-            val depositByDate = historyRows.associate { it.date to it.depositAmount }
+            val (historyRows, todayResult, todayDepositAmount) = withContext(Dispatchers.IO) {
+                syncEasyShopHistoryAndFetchToday(appContext, today)
+            }
+            if (!isAdded) return@launch
+            bindEasyShopChart(
+                today = today,
+                historyRows = historyRows,
+                todayResult = todayResult,
+                todayDepositAmount = todayDepositAmount,
+                chart = chart,
+                compare = compare,
+                range = range,
+                total = total,
+                empty = empty,
+                animate = true,
+                showEmptyState = true
+            )
+        }
+    }
 
-            easyDates = (7L downTo 1L).map { today.minusDays(it) }
-            val prevDates = (14L downTo 8L).map { today.minusDays(it) }
-            easyValues = easyDates.map { d -> amountByDate[d.toString()] ?: 0 }
-            easyDepositValues = easyDates.map { d -> depositByDate[d.toString()] ?: 0 }
+    private suspend fun syncEasyShopHistoryAndFetchToday(
+        appContext: Context,
+        today: LocalDate
+    ): Triple<List<EasyShopSalesEntity>, EasyShopRepository.SalesFetchResult, Int> {
+        val repo = EasyShopRepository(appContext)
+        val dao = AppDatabase.get(appContext).easyShopSalesDao()
+        val keepFrom = today.minusDays(365).toString()
+        val historyFrom = today.minusDays(14)
+        val historyTo = today.minusDays(1)
+        val targetHistoryDates = generateSequence(historyFrom) { prev ->
+            if (prev.isBefore(historyTo)) prev.plusDays(1) else null
+        }.toList()
 
-            val easyTotal = easyValues.sum()
-            val easyPrevTotal = prevDates.sumOf { d -> amountByDate[d.toString()] ?: 0 }
-            easyDiff = easyTotal - easyPrevTotal
+        // 초기 비어있는 구간은 한 번에 보정해 15일(오늘 제외) 데이터를 채운다.
+        var history = dao.getAll()
+        if (history.size < 14) {
+            val backfillResult = repo.fetchSales(
+                from = historyFrom,
+                to = historyTo
+            )
+            if (backfillResult.success) {
+                val amountByDate = backfillResult.records
+                    .filterNot { it.isCanceled }
+                    .filter { it.transactionDate.isNotBlank() }
+                    .groupBy { it.transactionDate }
+                    .mapValues { (_, rows) -> rows.sumOf { it.amount } }
+                val now = System.currentTimeMillis()
+                amountByDate.forEach { (date, amount) ->
+                    dao.upsert(
+                        EasyShopSalesEntity(
+                            date = date,
+                            amount = amount,
+                            createdAt = now
+                        )
+                    )
+                }
+            }
+        }
 
+        val depositBackfill = repo.fetchDepositAmounts(historyFrom, historyTo)
+        if (depositBackfill.success && depositBackfill.amountsByDate.isNotEmpty()) {
+            history = dao.getAll()
+            val historyByDate = history.associateBy { it.date }
+            val now = System.currentTimeMillis()
+            depositBackfill.amountsByDate.forEach { (date, amount) ->
+                val existing = historyByDate[date]
+                dao.upsert(
+                    EasyShopSalesEntity(
+                        date = date,
+                        amount = existing?.amount ?: 0,
+                        depositAmount = amount,
+                        createdAt = now
+                    )
+                )
+            }
+        }
+
+        // 과거 데이터가 비어 있는 날짜는 "일자별 매출/입금 API"로만 채운다.
+        history = dao.getAll()
+        val existingDates = history.map { it.date }.toHashSet()
+        val missingDates = targetHistoryDates.filterNot { existingDates.contains(it.toString()) }
+        Log.i("Vmms", "EasyShop history missing dates before day-fill: ${missingDates.joinToString(",")}")
+
+        missingDates.forEach { date ->
+            val key = date.toString()
+            val daySales = repo.fetchSales(
+                from = date,
+                to = date
+            )
+            if (!daySales.success) {
+                Log.w(
+                    "Vmms",
+                    "EasyShop day-fill skipped (sales fail): $key, msg=${daySales.message}"
+                )
+                return@forEach
+            }
+
+            val dayAmount = sumEasyShopSalesByDate(daySales.records, date)
+            val dayDepositAmount = if (depositBackfill.success) {
+                depositBackfill.amountsByDate[key] ?: 0
+            } else {
+                val dayDeposit = repo.fetchDepositAmounts(date, date)
+                if (!dayDeposit.success) {
+                    Log.w(
+                        "Vmms",
+                        "EasyShop day-fill skipped (deposit fail): $key, msg=${dayDeposit.message}"
+                    )
+                    return@forEach
+                }
+                dayDeposit.amountsByDate[key] ?: 0
+            }
+
+            val entity = EasyShopSalesEntity(
+                date = key,
+                amount = dayAmount,
+                depositAmount = dayDepositAmount,
+                createdAt = System.currentTimeMillis()
+            )
+            dao.upsert(entity)
+            existingDates.add(key)
+            Log.i("Vmms", "EasyShop day-fill upsert: $key, sales=$dayAmount, deposit=$dayDepositAmount")
+        }
+
+        dao.deleteOlderThan(keepFrom)
+        history = dao.getAll()
+
+        val todayDeposit = repo.fetchTodayDepositAmount(today)
+        val todayDepositAmount = if (todayDeposit.success) todayDeposit.amount else 0
+        return Triple(history, repo.fetchTodaySales(), todayDepositAmount)
+    }
+
+    private fun bindEasyShopChart(
+        today: LocalDate,
+        historyRows: List<EasyShopSalesEntity>,
+        todayResult: EasyShopRepository.SalesFetchResult?,
+        todayDepositAmount: Int?,
+        chart: SalesChartView,
+        compare: TodayCompareBarChartView,
+        range: TextView,
+        total: TextView,
+        empty: TextView,
+        animate: Boolean,
+        showEmptyState: Boolean
+    ) {
+        val amountByDate = historyRows.associate { it.date to it.amount }
+        val depositByDate = historyRows.associate { it.date to it.depositAmount }
+
+        easyDates = (7L downTo 1L).map { today.minusDays(it) }
+        val prevDates = (14L downTo 8L).map { today.minusDays(it) }
+        easyValues = easyDates.map { d -> amountByDate[d.toString()] ?: 0 }
+        easyDepositValues = easyDates.map { d -> depositByDate[d.toString()] ?: 0 }
+
+        val easyTotal = easyValues.sum()
+        val easyPrevTotal = prevDates.sumOf { d -> amountByDate[d.toString()] ?: 0 }
+        easyDiff = easyTotal - easyPrevTotal
+
+        if (todayResult != null) {
             if (todayResult.success) {
                 val nonCanceled = todayResult.records.filterNot { it.isCanceled }
                 val todayRows = nonCanceled.filter {
@@ -237,34 +343,49 @@ class SalesFragment : Fragment() {
                 easyTodayShares = emptyList()
                 easyTodayTotal = 0
             }
-            easyTodayDeposit = todayDepositAmount
-
-            val fmt = DateTimeFormatter.ofPattern("yyyy.MM.dd")
-            range.text = if (easyDates.isNotEmpty()) {
-                "${easyDates.first().format(fmt)} - ${easyDates.last().format(fmt)}"
-            } else {
-                "--"
+        } else {
+            val todayFromDb = historyRows.firstOrNull { it.date == today.toString() }
+            if (todayFromDb != null) {
+                easyTodayTotal = todayFromDb.amount
+                easyTodayDeposit = todayFromDb.depositAmount
             }
+        }
+        if (todayDepositAmount != null) {
+            easyTodayDeposit = todayDepositAmount
+        }
 
+        val fmt = DateTimeFormatter.ofPattern("yyyy.MM.dd")
+        range.text = if (easyDates.isNotEmpty()) {
+            "${easyDates.first().format(fmt)} - ${easyDates.last().format(fmt)}"
+        } else {
+            "--"
+        }
+
+        if (showEmptyState) {
             empty.visibility = when {
-                !todayResult.success -> View.VISIBLE
+                todayResult != null && !todayResult.success -> View.VISIBLE
                 easyTodayTotal == 0 && easyValues.sum() == 0 -> View.VISIBLE
                 else -> View.GONE
             }
             if (empty.visibility == View.VISIBLE) {
-                empty.text = if (!todayResult.success) {
+                empty.text = if (todayResult != null && !todayResult.success) {
                     "EasyShop 오늘 매출 조회 실패: ${todayResult.message}"
                 } else {
                     "EasyShop 데이터가 없습니다."
                 }
             }
+        } else {
+            empty.visibility = View.GONE
+        }
 
-            chart.setData(easyDates, easyValues, today)
-            chart.setSecondaryData(easyDepositValues)
+        chart.setData(easyDates, easyValues, today)
+        chart.setSecondaryData(easyDepositValues)
+        compare.setData(easyTodayDeposit, easyTodayTotal)
+
+        easyAnimator?.cancel()
+        if (animate) {
             chart.setAnimationProgress(0f)
-            compare.setData(easyTodayDeposit, easyTodayTotal)
             compare.setAnimationProgress(0f)
-            easyAnimator?.cancel()
             easyAnimator = startEasyAnimation(
                 chart = chart,
                 compareChart = compare,
@@ -272,7 +393,23 @@ class SalesFragment : Fragment() {
                 totalAmount = easyTotal,
                 diff = easyDiff
             )
+        } else {
+            chart.setAnimationProgress(1f)
+            compare.setAnimationProgress(1f)
+            total.text = makeTotalText(easyTotal, kotlin.math.abs(easyDiff), easyDiff)
         }
+    }
+
+    private fun sumEasyShopSalesByDate(
+        records: List<EasyShopRepository.SalesRecord>,
+        date: LocalDate
+    ): Int {
+        val nonCanceled = records.filterNot { it.isCanceled }
+        val dayRows = nonCanceled.filter {
+            it.transactionDate.isBlank() || it.transactionDate == date.toString()
+        }
+        val sourceRows = if (dayRows.isEmpty()) nonCanceled else dayRows
+        return sourceRows.sumOf { it.amount }
     }
 
     private fun bindSubTabs(root: View) {
