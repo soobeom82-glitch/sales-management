@@ -3,10 +3,13 @@ package com.example.vmmswidget.ui
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.RectF
 import android.util.AttributeSet
+import android.view.MotionEvent
 import android.view.View
 import java.time.LocalDate
 import kotlin.math.max
+import kotlin.math.abs
 
 class SalesChartView @JvmOverloads constructor(
     context: Context,
@@ -19,6 +22,7 @@ class SalesChartView @JvmOverloads constructor(
     private var secondaryLabel: String = "입금"
     private var today: LocalDate? = null
     private var animProgress: Float = 1f
+    private var selectedIndex: Int? = null
 
     private val axisPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFF888888.toInt()
@@ -77,6 +81,32 @@ class SalesChartView @JvmOverloads constructor(
         color = 0xFF666666.toInt()
         textSize = 40f
     }
+    private val selectedBandPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0x223F6EA7
+        style = Paint.Style.FILL
+    }
+    private val guideLinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFF5B6472.toInt()
+        strokeWidth = 2f
+        style = Paint.Style.STROKE
+    }
+    private val guideTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFF334155.toInt()
+        textSize = 42f
+    }
+    private val guideChipPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFFFFFFFF.toInt()
+        style = Paint.Style.FILL
+    }
+    private val guideChipStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFFD5DCE8.toInt()
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
+    }
+    private val salesGuideChipColor = 0xFFE8F0FC.toInt()
+    private val salesGuideChipStrokeColor = 0xFF9FB7DA.toInt()
+    private val depositGuideChipColor = 0xFFFAEEDB.toInt()
+    private val depositGuideChipStrokeColor = 0xFFD8B786.toInt()
 
     fun setData(
         dates: List<LocalDate>,
@@ -87,6 +117,7 @@ class SalesChartView @JvmOverloads constructor(
         this.values = values
         this.secondaryValues = emptyList()
         this.today = today
+        this.selectedIndex = null
         invalidate()
     }
 
@@ -101,40 +132,49 @@ class SalesChartView @JvmOverloads constructor(
         invalidate()
     }
 
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        val layout = computeLayout() ?: return super.onTouchEvent(event)
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN,
+            MotionEvent.ACTION_MOVE,
+            MotionEvent.ACTION_UP -> {
+                val touched = findTouchedIndex(event.x, event.y, layout)
+                if (touched != selectedIndex) {
+                    selectedIndex = touched
+                    invalidate()
+                }
+                if (event.actionMasked == MotionEvent.ACTION_UP) {
+                    performClick()
+                }
+                return true
+            }
+        }
+        return super.onTouchEvent(event)
+    }
+
+    override fun performClick(): Boolean {
+        return super.performClick()
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (values.isEmpty()) return
 
-        val paddingLeft = 140f
-        val paddingBottom = 90f
-        val paddingTop = 26f
-        val paddingRight = 20f
-
-        val hasSecondary = secondaryValues.size == values.size
-        val legendAreaHeight = if (hasSecondary) 64f else 0f
-        val plotTop = paddingTop + legendAreaHeight
-        val w = width - paddingLeft - paddingRight
-        val h = (height - plotTop - paddingBottom).coerceAtLeast(1f)
-        val rawMax = max(
-            values.maxOrNull() ?: 1,
-            if (hasSecondary) secondaryValues.maxOrNull() ?: 1 else 1
-        )
-        val rounded = ((rawMax + 500) / 1000) * 1000
-        val maxValue = max(1, rounded + 15_000)
+        val layout = computeLayout() ?: return
+        val plotTop = layout.plotTop
+        val h = layout.h
+        val maxValue = layout.maxValue
         val barCount = values.size
-        val gap = 24f
-        val bandWidth = ((w - gap * (barCount - 1)) / barCount).coerceAtLeast(8f)
-        val innerGap = if (hasSecondary) 1f else 0f
-        val pairBarWidth = if (hasSecondary) {
-            ((bandWidth - innerGap) / 2f).coerceAtLeast(4f)
-        } else {
-            0f
-        }
-        val secondaryBarWidth = if (hasSecondary) pairBarWidth else 0f
-        val salesBarWidth = if (hasSecondary) pairBarWidth else (bandWidth * 0.70f).coerceAtLeast(8f)
-        val startX = paddingLeft
-        val chartLeft = paddingLeft
-        val chartRight = paddingLeft + w
+        val gap = layout.gap
+        val bandWidth = layout.bandWidth
+        val innerGap = layout.innerGap
+        val secondaryBarWidth = layout.secondaryBarWidth
+        val salesBarWidth = layout.salesBarWidth
+        val startX = layout.startX
+        val chartLeft = layout.chartLeft
+        val chartRight = layout.chartRight
+        val hasSecondary = layout.hasSecondary
+        val paddingTop = layout.paddingTop
 
         // weekend/holiday background bands
         val holidaySet = com.example.vmmswidget.data.HolidayCalendar
@@ -150,6 +190,12 @@ class SalesChartView @JvmOverloads constructor(
                 val right = bandLeft + bandWidth
                 canvas.drawRect(left, plotTop, right, plotTop + h, weekendBgPaint)
             }
+        }
+        selectedIndex?.takeIf { it in 0 until barCount }?.let { i ->
+            val bandLeft = startX + i * (bandWidth + gap)
+            val left = bandLeft
+            val right = bandLeft + bandWidth
+            canvas.drawRect(left, plotTop, right, plotTop + h, selectedBandPaint)
         }
 
         // horizontal grid (10,000 unit)
@@ -223,6 +269,13 @@ class SalesChartView @JvmOverloads constructor(
             v += gridStep
         }
 
+        var selectedSalesCenterX: Float? = null
+        var selectedSalesTop: Float? = null
+        var selectedSalesValue: Int? = null
+        var selectedDepositCenterX: Float? = null
+        var selectedDepositTop: Float? = null
+        var selectedDepositValue: Int? = null
+
         for (i in 0 until barCount) {
             val salesValue = values[i]
             val bandLeft = startX + i * (bandWidth + gap)
@@ -256,6 +309,15 @@ class SalesChartView @JvmOverloads constructor(
                 val salesRight = salesLeft + salesBarWidth
                 canvas.drawRect(salesLeft, salesTop, salesRight, bottom, salesPaint)
                 canvas.drawRect(salesLeft, salesTop, salesRight, bottom, salesBorderPaint)
+
+                if (selectedIndex == i) {
+                    selectedDepositCenterX = (depositLeft + depositRight) / 2f
+                    selectedDepositTop = depositTop
+                    selectedDepositValue = depositValue
+                    selectedSalesCenterX = (salesLeft + salesRight) / 2f
+                    selectedSalesTop = salesTop
+                    selectedSalesValue = salesValue
+                }
             } else {
                 val salesHeight = h * salesValue / maxGrid.toFloat() * animProgress
                 val left = bandLeft + (bandWidth - salesBarWidth) / 2f
@@ -263,6 +325,12 @@ class SalesChartView @JvmOverloads constructor(
                 val right = left + salesBarWidth
                 canvas.drawRect(left, top, right, bottom, salesPaint)
                 canvas.drawRect(left, top, right, bottom, salesBorderPaint)
+
+                if (selectedIndex == i) {
+                    selectedSalesCenterX = (left + right) / 2f
+                    selectedSalesTop = top
+                    selectedSalesValue = salesValue
+                }
             }
 
             // X-axis label (day of month)
@@ -294,6 +362,195 @@ class SalesChartView @JvmOverloads constructor(
             val dayX2 = bandLeft + (bandWidth - xDayWidth) / 2f
             canvas.drawText(dayText, dayX2, bottom + 40f, xAxisPaint)
         }
+
+        selectedSalesCenterX?.let { cx ->
+            selectedSalesTop?.let { top ->
+                selectedSalesValue?.let { value ->
+                    drawValueGuide(
+                        canvas = canvas,
+                        barCenterX = cx,
+                        barTopY = top,
+                        value = value,
+                        chartLeft = chartLeft,
+                        chartRight = chartRight,
+                        side = if (hasSecondary) GuideSide.RIGHT else GuideSide.CENTER,
+                        extraLift = if (hasSecondary) 0f else 12f,
+                        series = GuideSeries.SALES
+                    )
+                }
+            }
+        }
+        if (hasSecondary) {
+            selectedDepositCenterX?.let { cx ->
+                selectedDepositTop?.let { top ->
+                    selectedDepositValue?.let { value ->
+                        drawValueGuide(
+                            canvas = canvas,
+                            barCenterX = cx,
+                            barTopY = top,
+                            value = value,
+                            chartLeft = chartLeft,
+                            chartRight = chartRight,
+                            side = GuideSide.LEFT,
+                            extraLift = 44f,
+                            series = GuideSeries.DEPOSIT
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private data class Layout(
+        val paddingTop: Float,
+        val plotTop: Float,
+        val plotBottom: Float,
+        val chartLeft: Float,
+        val chartRight: Float,
+        val startX: Float,
+        val h: Float,
+        val maxValue: Int,
+        val gap: Float,
+        val bandWidth: Float,
+        val innerGap: Float,
+        val secondaryBarWidth: Float,
+        val salesBarWidth: Float,
+        val hasSecondary: Boolean
+    )
+
+    private fun computeLayout(): Layout? {
+        if (values.isEmpty()) return null
+        val paddingLeft = 140f
+        val paddingBottom = 90f
+        val paddingTop = 26f
+        val paddingRight = 20f
+
+        val hasSecondary = secondaryValues.size == values.size
+        val legendAreaHeight = if (hasSecondary) 64f else 0f
+        val plotTop = paddingTop + legendAreaHeight
+        val w = width - paddingLeft - paddingRight
+        val h = (height - plotTop - paddingBottom).coerceAtLeast(1f)
+        val rawMax = max(
+            values.maxOrNull() ?: 1,
+            if (hasSecondary) secondaryValues.maxOrNull() ?: 1 else 1
+        )
+        val rounded = ((rawMax + 500) / 1000) * 1000
+        val maxValue = max(1, rounded + 15_000)
+        val barCount = values.size
+        val gap = 24f
+        val bandWidth = ((w - gap * (barCount - 1)) / barCount).coerceAtLeast(8f)
+        val innerGap = if (hasSecondary) 1f else 0f
+        val pairBarWidth = if (hasSecondary) {
+            ((bandWidth - innerGap) / 2f).coerceAtLeast(4f)
+        } else {
+            0f
+        }
+        val secondaryBarWidth = if (hasSecondary) pairBarWidth else 0f
+        val salesBarWidth = if (hasSecondary) pairBarWidth else (bandWidth * 0.70f).coerceAtLeast(8f)
+        val startX = paddingLeft
+        val chartLeft = paddingLeft
+        val chartRight = paddingLeft + w
+        return Layout(
+            paddingTop = paddingTop,
+            plotTop = plotTop,
+            plotBottom = plotTop + h,
+            chartLeft = chartLeft,
+            chartRight = chartRight,
+            startX = startX,
+            h = h,
+            maxValue = maxValue,
+            gap = gap,
+            bandWidth = bandWidth,
+            innerGap = innerGap,
+            secondaryBarWidth = secondaryBarWidth,
+            salesBarWidth = salesBarWidth,
+            hasSecondary = hasSecondary
+        )
+    }
+
+    private fun findTouchedIndex(x: Float, y: Float, layout: Layout): Int? {
+        if (x < layout.chartLeft - layout.gap || x > layout.chartRight + layout.gap) return null
+        if (y < layout.plotTop - 40f || y > layout.plotBottom + 60f) return null
+        var bestIndex = -1
+        var bestDistance = Float.MAX_VALUE
+        for (i in values.indices) {
+            val bandLeft = layout.startX + i * (layout.bandWidth + layout.gap)
+            val centerX = bandLeft + layout.bandWidth / 2f
+            val d = abs(centerX - x)
+            if (d < bestDistance) {
+                bestDistance = d
+                bestIndex = i
+            }
+        }
+        return if (bestIndex >= 0) bestIndex else null
+    }
+
+    private enum class GuideSide {
+        LEFT, RIGHT, CENTER
+    }
+    private enum class GuideSeries {
+        SALES, DEPOSIT
+    }
+
+    private fun drawValueGuide(
+        canvas: Canvas,
+        barCenterX: Float,
+        barTopY: Float,
+        value: Int,
+        chartLeft: Float,
+        chartRight: Float,
+        side: GuideSide,
+        extraLift: Float,
+        series: GuideSeries
+    ) {
+        when (series) {
+            GuideSeries.SALES -> {
+                guideChipPaint.color = salesGuideChipColor
+                guideChipStrokePaint.color = salesGuideChipStrokeColor
+            }
+            GuideSeries.DEPOSIT -> {
+                guideChipPaint.color = depositGuideChipColor
+                guideChipStrokePaint.color = depositGuideChipStrokeColor
+            }
+        }
+
+        val text = String.format("%,d원", value)
+        val textWidth = guideTextPaint.measureText(text)
+        val chipPaddingX = 22f
+        val chipPaddingY = 14f
+        val chipWidth = textWidth + chipPaddingX * 2f
+        val chipHeight = guideTextPaint.textSize + chipPaddingY * 2f
+
+        val clampedTop = barTopY.coerceAtLeast(40f)
+        val connectorY = (clampedTop - 90f - extraLift).coerceAtLeast(chipHeight + 12f)
+
+        val minCenterX = chartLeft + chipWidth / 2f + 4f
+        val maxCenterX = chartRight - chipWidth / 2f - 4f
+        val desiredCenterX = when (side) {
+            GuideSide.LEFT -> barCenterX - (chipWidth / 2f + 96f)
+            GuideSide.RIGHT -> barCenterX + (chipWidth / 2f + 96f)
+            GuideSide.CENTER -> barCenterX
+        }
+        val chipCenterX = desiredCenterX.coerceIn(minCenterX, maxCenterX)
+        val chipLeft = chipCenterX - chipWidth / 2f
+        val chipRight = chipCenterX + chipWidth / 2f
+        val chipTop = connectorY - chipHeight / 2f
+        val chipBottom = connectorY + chipHeight / 2f
+
+        val horizontalEndX = when {
+            chipCenterX >= barCenterX -> chipLeft
+            else -> chipRight
+        }
+        canvas.drawLine(barCenterX, clampedTop, barCenterX, connectorY, guideLinePaint)
+        canvas.drawLine(barCenterX, connectorY, horizontalEndX, connectorY, guideLinePaint)
+
+        val chipRect = RectF(chipLeft, chipTop, chipRight, chipBottom)
+        canvas.drawRoundRect(chipRect, chipHeight / 2f, chipHeight / 2f, guideChipPaint)
+        canvas.drawRoundRect(chipRect, chipHeight / 2f, chipHeight / 2f, guideChipStrokePaint)
+
+        val textX = chipCenterX - textWidth / 2f
+        val textY = chipTop + chipPaddingY + guideTextPaint.textSize
+        canvas.drawText(text, textX, textY, guideTextPaint)
     }
 
     private fun drawHatch(
