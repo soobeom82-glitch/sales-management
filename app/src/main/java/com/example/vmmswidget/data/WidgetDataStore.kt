@@ -73,6 +73,12 @@ class WidgetDataStore(context: Context) {
 
     fun hasEasyShopCanceledToday(): Boolean = prefs.getBoolean(KEY_EASYSHOP_HAS_CANCELED_TODAY, false)
 
+    fun saveEasyShopCanceledTodayCount(count: Int) {
+        prefs.edit().putInt(KEY_EASYSHOP_CANCELED_TODAY_COUNT, count.coerceAtLeast(0)).apply()
+    }
+
+    fun getEasyShopCanceledTodayCount(): Int = prefs.getInt(KEY_EASYSHOP_CANCELED_TODAY_COUNT, 0)
+
     companion object {
         private const val KEY_TEXT = "display_text"
         private const val KEY_AMOUNT = "amount_value"
@@ -84,5 +90,6 @@ class WidgetDataStore(context: Context) {
         private const val KEY_EASYSHOP_UPDATED_AT = "easyshop_updated_at"
         private const val KEY_EASYSHOP_REFRESHING = "easyshop_refreshing"
         private const val KEY_EASYSHOP_HAS_CANCELED_TODAY = "easyshop_has_canceled_today"
+        private const val KEY_EASYSHOP_CANCELED_TODAY_COUNT = "easyshop_canceled_today_count"
     }
 }

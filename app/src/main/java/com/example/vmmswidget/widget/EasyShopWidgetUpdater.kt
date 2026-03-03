@@ -14,7 +14,6 @@ import com.example.vmmswidget.data.WidgetDataStore
 import com.example.vmmswidget.data.db.AppDatabase
 import com.example.vmmswidget.ui.MainActivity
 import java.time.LocalDate
-import java.time.LocalDateTime
 
 object EasyShopWidgetUpdater {
     fun updateAll(context: Context) {
@@ -31,6 +30,7 @@ object EasyShopWidgetUpdater {
         val updatedAt = dataStore.getEasyShopUpdatedAt()
         val refreshing = dataStore.isEasyShopRefreshing()
         val hasCanceledToday = dataStore.hasEasyShopCanceledToday()
+        val canceledTodayCount = dataStore.getEasyShopCanceledTodayCount()
         val bgRes = if (hasCanceledToday) {
             R.drawable.widget_bg_cancel
         } else {
@@ -40,10 +40,7 @@ object EasyShopWidgetUpdater {
             val today = LocalDate.now().toString()
             AppDatabase.get(context).easyShopSalesDao().getLastDaysExcludingToday(today, 14).asReversed()
         }
-        val orderCount = kotlinx.coroutines.runBlocking {
-            AppDatabase.get(context).orderDao().getPlannedItems().size
-        }
-        val orderBadgeBgRes = if (isOrderCriticalWindow(LocalDateTime.now())) {
+        val cancelBadgeBgRes = if (canceledTodayCount > 0) {
             R.drawable.widget_order_badge_red_bg
         } else {
             R.drawable.widget_order_badge_gray_bg
@@ -87,6 +84,7 @@ object EasyShopWidgetUpdater {
             views.setTextColor(R.id.widget_deposit_amount, Color.parseColor("#334155"))
             views.setTextColor(R.id.widget_order_label, Color.parseColor("#334155"))
             views.setTextColor(R.id.widget_updated, Color.parseColor("#334155"))
+            views.setTextViewText(R.id.widget_order_label, "취소")
             val spacer = "\u00A0\u00A0"
             val fullText = "$avgText$spacer$changeText"
             val spannable = android.text.SpannableStringBuilder(fullText)
@@ -135,20 +133,10 @@ object EasyShopWidgetUpdater {
             views.setOnClickPendingIntent(R.id.widget_avg, openSalesPending)
             views.setOnClickPendingIntent(R.id.widget_updated, openSalesPending)
 
-            val openOrder = Intent(context, MainActivity::class.java).apply {
-                putExtra(MainActivity.EXTRA_TAB_INDEX, 2)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            }
-            val openOrderPending = android.app.PendingIntent.getActivity(
-                context,
-                102,
-                openOrder,
-                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
-            )
-            views.setTextViewText(R.id.widget_order_badge, orderCount.toString())
-            views.setInt(R.id.widget_order_badge, "setBackgroundResource", orderBadgeBgRes)
-            views.setOnClickPendingIntent(R.id.widget_order_badge, openOrderPending)
-            views.setOnClickPendingIntent(R.id.widget_order_label, openOrderPending)
+            views.setTextViewText(R.id.widget_order_badge, canceledTodayCount.toString())
+            views.setInt(R.id.widget_order_badge, "setBackgroundResource", cancelBadgeBgRes)
+            views.setOnClickPendingIntent(R.id.widget_order_badge, openSalesPending)
+            views.setOnClickPendingIntent(R.id.widget_order_label, openSalesPending)
             manager.updateAppWidget(id, views)
         }
     }
@@ -161,15 +149,6 @@ object EasyShopWidgetUpdater {
             pct < 0 -> String.format("▼%.2f%%", kotlin.math.abs(pct)) to Color.parseColor("#6FA3D6")
             else -> "▲0.00%" to Color.parseColor("#888888")
         }
-    }
-
-    private fun isOrderCriticalWindow(now: LocalDateTime): Boolean {
-        val day = now.dayOfWeek
-        val time = now.toLocalTime()
-        return (day == java.time.DayOfWeek.MONDAY && !time.isBefore(java.time.LocalTime.of(19, 0))) ||
-            (day == java.time.DayOfWeek.TUESDAY && time.isBefore(java.time.LocalTime.of(10, 0))) ||
-            (day == java.time.DayOfWeek.FRIDAY && !time.isBefore(java.time.LocalTime.of(19, 0))) ||
-            (day == java.time.DayOfWeek.SATURDAY && time.isBefore(java.time.LocalTime.of(10, 0)))
     }
 
     private fun dpToPx(context: Context, dp: Int): Int {
