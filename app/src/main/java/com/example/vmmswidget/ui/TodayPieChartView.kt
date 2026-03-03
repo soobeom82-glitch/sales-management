@@ -12,6 +12,7 @@ import android.util.TypedValue
 import android.view.View
 import com.example.vmmswidget.net.TransactionsRepository
 import kotlin.math.cos
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -58,6 +59,27 @@ class TodayPieChartView @JvmOverloads constructor(
         color = 0xFF333333.toInt()
         textSize = 34f
     }
+    private val labelChipPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFFE8F4FF.toInt()
+        style = Paint.Style.FILL
+    }
+    private val labelChipStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFFB5D2EE.toInt()
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
+    }
+
+    private data class LabelSpec(
+        val index: Int,
+        val text: String,
+        val rightSide: Boolean,
+        val x1: Float,
+        val y1: Float,
+        val bendX: Float,
+        val desiredY: Float,
+        val chipWidth: Float,
+        val chipHeight: Float
+    )
 
     fun setData(totalAmount: Int, shares: List<TransactionsRepository.TodayItemShare>) {
         this.totalAmount = totalAmount
@@ -172,25 +194,94 @@ class TodayPieChartView @JvmOverloads constructor(
         }
 
         // Labels and guide lines
-        slices.forEach { slice ->
+        val labelSpecs = mutableListOf<LabelSpec>()
+        slices.forEachIndexed { idx, slice ->
             val rad = Math.toRadians(slice.mid.toDouble())
             val x1 = cx + slice.offX + cos(rad).toFloat() * radius
             val y1 = cy + slice.offY + sin(rad).toFloat() * ry
             val x2 = cx + slice.offX + cos(rad).toFloat() * (radius + 34f)
             val y2 = cy + slice.offY + sin(rad).toFloat() * (ry + 26f)
             val lowerHalfBias = if (sin(rad) > 0.25) 42f else if (sin(rad) > 0.0) 22f else 0f
-            val y2Adjusted = y2 + lowerHalfBias
+            val desiredY = y2 + lowerHalfBias
             val rightSide = cos(rad) >= 0
-            val x3 = if (rightSide) x2 + 54f else x2 - 54f
-
-            canvas.drawLine(x1, y1, x2, y2Adjusted, guidePaint)
-            canvas.drawLine(x2, y2Adjusted, x3, y2Adjusted, guidePaint)
-
             val pct = ((slice.share.amount * 100f) / sum.toFloat()).roundToInt()
             val name = if (slice.share.label.length > 12) slice.share.label.take(12) + "…" else slice.share.label
             val label = "$name (${pct}%)"
-            val tx = if (rightSide) x3 + 10f else x3 - labelPaint.measureText(label) - 10f
-            canvas.drawText(label, tx, y2Adjusted - 2f, labelPaint)
+            val chipPaddingX = 18f
+            val chipPaddingY = 10f
+            val chipWidth = labelPaint.measureText(label) + chipPaddingX * 2f
+            val chipHeight = labelPaint.textSize + chipPaddingY * 2f
+            val bendX = if (rightSide) {
+                max(x2 + 42f, cx + radius + 30f)
+            } else {
+                min(x2 - 42f, cx - radius - 30f)
+            }
+            labelSpecs += LabelSpec(
+                index = idx,
+                text = label,
+                rightSide = rightSide,
+                x1 = x1,
+                y1 = y1,
+                bendX = bendX,
+                desiredY = desiredY,
+                chipWidth = chipWidth,
+                chipHeight = chipHeight
+            )
+        }
+
+        val topLimit = outerRect.top - 56f
+        val bottomLimit = outerRect.bottom + depth + 66f
+        val minGap = 16f
+        val rightYs = resolveLabelCenters(
+            labels = labelSpecs.filter { it.rightSide },
+            topLimit = topLimit,
+            bottomLimit = bottomLimit,
+            minGap = minGap
+        )
+        val leftYs = resolveLabelCenters(
+            labels = labelSpecs.filter { !it.rightSide },
+            topLimit = topLimit,
+            bottomLimit = bottomLimit,
+            minGap = minGap
+        )
+
+        labelSpecs.forEach { spec ->
+            val centerY = if (spec.rightSide) {
+                rightYs[spec.index] ?: spec.desiredY
+            } else {
+                leftYs[spec.index] ?: spec.desiredY
+            }
+            val chipLeft = if (spec.rightSide) {
+                (spec.bendX + 22f).coerceAtMost(width - spec.chipWidth - 8f)
+            } else {
+                (spec.bendX - 22f - spec.chipWidth).coerceAtLeast(8f)
+            }
+            val chipTop = centerY - spec.chipHeight / 2f
+            val chipRect = RectF(
+                chipLeft,
+                chipTop,
+                chipLeft + spec.chipWidth,
+                chipTop + spec.chipHeight
+            )
+            val textX = chipLeft + (spec.chipWidth - labelPaint.measureText(spec.text)) / 2f
+            val textY = chipTop + (spec.chipHeight - labelPaint.textSize) / 2f + labelPaint.textSize
+            val chipEdgeX = if (spec.rightSide) chipRect.left else chipRect.right
+
+            canvas.drawLine(spec.x1, spec.y1, spec.bendX, centerY, guidePaint)
+            canvas.drawLine(spec.bendX, centerY, chipEdgeX, centerY, guidePaint)
+            canvas.drawRoundRect(
+                chipRect,
+                spec.chipHeight / 2f,
+                spec.chipHeight / 2f,
+                labelChipPaint
+            )
+            canvas.drawRoundRect(
+                chipRect,
+                spec.chipHeight / 2f,
+                spec.chipHeight / 2f,
+                labelChipStrokePaint
+            )
+            canvas.drawText(spec.text, textX, textY, labelPaint)
         }
 
         val animatedTotal = (totalAmount * progress).toInt()
@@ -308,5 +399,57 @@ class TodayPieChartView @JvmOverloads constructor(
         val gg = Color.green(color) + ((255 - Color.green(color)) * r).toInt()
         val bb = Color.blue(color) + ((255 - Color.blue(color)) * r).toInt()
         return Color.argb(Color.alpha(color), rr, gg, bb)
+    }
+
+    private fun resolveLabelCenters(
+        labels: List<LabelSpec>,
+        topLimit: Float,
+        bottomLimit: Float,
+        minGap: Float
+    ): Map<Int, Float> {
+        if (labels.isEmpty()) return emptyMap()
+        val sorted = labels.sortedBy { it.desiredY }
+        val n = sorted.size
+        val centers = FloatArray(n)
+
+        var needed = 0f
+        sorted.forEachIndexed { index, label ->
+            needed += label.chipHeight
+            if (index > 0) needed += minGap
+        }
+        val available = (bottomLimit - topLimit).coerceAtLeast(1f)
+
+        if (needed >= available) {
+            var cursor = topLimit
+            sorted.forEachIndexed { i, label ->
+                val half = label.chipHeight / 2f
+                cursor += half
+                centers[i] = cursor
+                cursor += half + minGap
+            }
+        } else {
+            sorted.forEachIndexed { i, label ->
+                val half = label.chipHeight / 2f
+                val minCenter = topLimit + half
+                val maxCenter = bottomLimit - half
+                val desired = label.desiredY.coerceIn(minCenter, maxCenter)
+                centers[i] = if (i == 0) {
+                    desired
+                } else {
+                    val prevHalf = sorted[i - 1].chipHeight / 2f
+                    max(desired, centers[i - 1] + prevHalf + minGap + half)
+                }
+            }
+            val overflow = (centers.last() + sorted.last().chipHeight / 2f) - bottomLimit
+            if (overflow > 0f) {
+                for (i in centers.indices) centers[i] -= overflow
+            }
+            val underflow = topLimit - (centers.first() - sorted.first().chipHeight / 2f)
+            if (underflow > 0f) {
+                for (i in centers.indices) centers[i] += underflow
+            }
+        }
+
+        return sorted.indices.associate { sorted[it].index to centers[it] }
     }
 }
