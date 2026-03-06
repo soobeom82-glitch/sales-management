@@ -41,9 +41,12 @@ class FetchEasyShopWidgetWorker(
             return@withContext Result.success()
         }
 
+        val repo = EasyShopRepository(appContext)
+        runCatching { syncEasyShopPreviousDayIfNeeded(repo) }
+            .onFailure { Log.w("Vmms", "EasyShop previous-day sync failed", it) }
+
         return@withContext try {
             val today = LocalDate.now().toString()
-            val repo = EasyShopRepository(appContext)
             val result = repo.fetchTodaySales()
             if (!result.success) {
                 saveAndUpdate(
@@ -147,6 +150,55 @@ class FetchEasyShopWidgetWorker(
         )
 
         return finalDeposit
+    }
+
+    private suspend fun syncEasyShopPreviousDayIfNeeded(repo: EasyShopRepository) {
+        val dataStore = WidgetDataStore(appContext)
+        val today = LocalDate.now()
+        val yesterday = today.minusDays(1)
+        val key = yesterday.toString()
+
+        dataStore.pruneDailyCloseStatusBefore(
+            source = WidgetDataStore.SOURCE_EASYSHOP,
+            cutoffDateExclusive = today.minusDays(365)
+        )
+        dataStore.ensureDailyClosePending(WidgetDataStore.SOURCE_EASYSHOP, yesterday)
+        if (dataStore.isDailyCloseDone(WidgetDataStore.SOURCE_EASYSHOP, yesterday)) {
+            return
+        }
+
+        val salesResult = repo.fetchSales(yesterday, yesterday)
+        if (!salesResult.success) {
+            dataStore.markDailyCloseDone(WidgetDataStore.SOURCE_EASYSHOP, yesterday, false)
+            Log.w("Vmms", "EasyShop previous-day close sync pending: $key, ${salesResult.message}")
+            return
+        }
+
+        val nonCanceled = salesResult.records.filterNot { it.isCanceled }
+        val dayRows = nonCanceled.filter { it.transactionDate.isBlank() || it.transactionDate == key }
+        val sourceRows = if (dayRows.isEmpty()) nonCanceled else dayRows
+        val salesAmount = sourceRows.sumOf { it.amount }
+
+        val dao = AppDatabase.get(appContext).easyShopSalesDao()
+        val existing = dao.getByDate(key)
+        val depositResult = repo.fetchDepositAmounts(yesterday, yesterday)
+        val depositAmount = if (depositResult.success) {
+            depositResult.amountsByDate[key] ?: existing?.depositAmount ?: 0
+        } else {
+            existing?.depositAmount ?: 0
+        }
+
+        dao.upsert(
+            EasyShopSalesEntity(
+                date = key,
+                amount = salesAmount,
+                depositAmount = depositAmount,
+                createdAt = System.currentTimeMillis()
+            )
+        )
+        dao.deleteOlderThan(today.minusDays(365).toString())
+        dataStore.markDailyCloseDone(WidgetDataStore.SOURCE_EASYSHOP, yesterday, true)
+        Log.i("Vmms", "EasyShop previous-day close sync done: $key=$salesAmount, deposit=$depositAmount")
     }
 
     companion object {

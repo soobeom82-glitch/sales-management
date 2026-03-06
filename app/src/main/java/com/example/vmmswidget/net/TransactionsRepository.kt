@@ -273,13 +273,58 @@ class TransactionsRepository(private val context: Context) {
         result
     }
 
+    suspend fun fetchDailyTotalExcludingCanceled(date: LocalDate): DailyTotal? = withContext(Dispatchers.IO) {
+        val auth = AuthStore(context)
+        val id = auth.getId()
+        val password = auth.getPassword()
+        if (id.isNullOrBlank() || password.isNullOrBlank()) return@withContext null
+
+        val http = HttpClient(context)
+        val client = http.client
+        var pageNo = 1
+        var totalPages = 1
+        var sum = 0
+
+        while (pageNo <= totalPages) {
+            val body = fetchList(client, http, id, password, date, date, pageNo) ?: return@withContext null
+            try {
+                val json = JSONObject(body)
+                totalPages = (json.optInt("totalPages", 1)).coerceAtLeast(1)
+                val arr = json.optJSONArray("data") ?: JSONArray()
+                for (i in 0 until arr.length()) {
+                    val obj = arr.optJSONObject(i) ?: continue
+                    val payStep = obj.optString("pay_step", "")
+                    if (payStep.contains("취소")) continue
+                    val amount = obj.optString("amount", "0")
+                        .filter { it.isDigit() }
+                        .toIntOrNull() ?: 0
+                    sum += amount
+                }
+            } catch (e: Exception) {
+                Log.w("Vmms", "Failed to parse daily total for $date", e)
+                return@withContext null
+            }
+            pageNo += 1
+        }
+
+        DailyTotal(date = date.toString(), amount = sum)
+    }
+
     suspend fun requestCancelInit(): String? = withContext(Dispatchers.IO) {
+        val auth = AuthStore(context)
+        val certUser = auth.getCancelCertUser().orEmpty().trim()
+        val certPhone = auth.getCancelCertPhone().orEmpty().trim()
+        val certEmail = auth.getCancelCertEmail().orEmpty().trim()
+        if (certUser.isBlank() || certPhone.isBlank() || certEmail.isBlank()) {
+            Log.w("Vmms", "requestCancelInit skipped: cancel cert profile is empty")
+            return@withContext null
+        }
         val url = CERT_INIT_URL
         val payload = JSONObject().apply {
             put("service", "CERT")
-            put("user", CERT_USER)
-            put("phone", CERT_PHONE)
-            put("email", CERT_EMAIL)
+            put("user", certUser)
+            put("phone", certPhone)
+            put("email", certEmail)
         }.toString()
         val request = Request.Builder()
             .url(url)
@@ -310,14 +355,22 @@ class TransactionsRepository(private val context: Context) {
 
     suspend fun submitCancelCertCode(code: String, param: String?): Boolean = withContext(Dispatchers.IO) {
         if (code.length != 6 || !code.all { it.isDigit() }) return@withContext false
+        val auth = AuthStore(context)
+        val certUser = auth.getCancelCertUser().orEmpty().trim()
+        val certPhone = auth.getCancelCertPhone().orEmpty().trim()
+        val certEmail = auth.getCancelCertEmail().orEmpty().trim()
+        if (certUser.isBlank() || certPhone.isBlank() || certEmail.isBlank()) {
+            Log.w("Vmms", "submitCancelCertCode skipped: cancel cert profile is empty")
+            return@withContext false
+        }
 
         val http = HttpClient(context)
         val client = http.client
         val payload = JSONObject().apply {
             put("service", "CERT")
-            put("user", CERT_USER)
-            put("phone", CERT_PHONE)
-            put("email", CERT_EMAIL)
+            put("user", certUser)
+            put("phone", certPhone)
+            put("email", certEmail)
             put("param", param ?: "")
             put("code", code)
             put("certNo", code)
@@ -659,8 +712,5 @@ class TransactionsRepository(private val context: Context) {
         private const val CERT_INIT_URL = "https://devapi.ubcn.co.kr:17881/cert/init"
         private const val CERT_COMPARE_URL = "https://devapi.ubcn.co.kr:17881/cert/compare"
         private const val CANCEL_V2_URL = "https://devapi.ubcn.co.kr:17881/cancel/v2"
-        private const val CERT_USER = "estery"
-        private const val CERT_PHONE = "010-9421-0544"
-        private const val CERT_EMAIL = "0x00@kakao.com"
     }
 }

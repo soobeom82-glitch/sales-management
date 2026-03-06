@@ -37,6 +37,9 @@ class LoginFragment : Fragment() {
         val inputVmmsPassword = view.findViewById<EditText>(R.id.input_vmms_password)
         val inputEasyShopId = view.findViewById<EditText>(R.id.input_easyshop_id)
         val inputEasyShopPassword = view.findViewById<EditText>(R.id.input_easyshop_password)
+        val inputCertUser = view.findViewById<EditText>(R.id.input_cert_user)
+        val inputCertPhone = view.findViewById<EditText>(R.id.input_cert_phone)
+        val inputCertEmail = view.findViewById<EditText>(R.id.input_cert_email)
         val btnSave = view.findViewById<Button>(R.id.btn_save)
         val btnEasyShopVerify = view.findViewById<Button>(R.id.btn_easyshop_verify)
         val status = view.findViewById<TextView>(R.id.text_status)
@@ -48,6 +51,9 @@ class LoginFragment : Fragment() {
         inputVmmsPassword.setText(auth.getVmmsPassword() ?: "")
         inputEasyShopId.setText(auth.getEasyShopId() ?: "")
         inputEasyShopPassword.setText(auth.getEasyShopPassword() ?: "")
+        inputCertUser.setText(auth.getCancelCertUser() ?: "")
+        inputCertPhone.setText(auth.getCancelCertPhone() ?: "")
+        inputCertEmail.setText(auth.getCancelCertEmail() ?: "")
         status.text = "상태: ${dataStore.getDisplayText()}"
 
         val autoSaveWatcher = object : TextWatcher {
@@ -62,12 +68,20 @@ class LoginFragment : Fragment() {
                     inputEasyShopId.text?.toString()?.trim().orEmpty(),
                     inputEasyShopPassword.text?.toString()?.trim().orEmpty()
                 )
+                auth.saveCancelCertProfile(
+                    inputCertUser.text?.toString()?.trim().orEmpty(),
+                    inputCertPhone.text?.toString()?.trim().orEmpty(),
+                    inputCertEmail.text?.toString()?.trim().orEmpty()
+                )
             }
         }
         inputVmmsId.addTextChangedListener(autoSaveWatcher)
         inputVmmsPassword.addTextChangedListener(autoSaveWatcher)
         inputEasyShopId.addTextChangedListener(autoSaveWatcher)
         inputEasyShopPassword.addTextChangedListener(autoSaveWatcher)
+        inputCertUser.addTextChangedListener(autoSaveWatcher)
+        inputCertPhone.addTextChangedListener(autoSaveWatcher)
+        inputCertEmail.addTextChangedListener(autoSaveWatcher)
 
         btnEasyShopVerify.setOnClickListener {
             val id = inputEasyShopId.text?.toString()?.trim().orEmpty()
@@ -91,12 +105,15 @@ class LoginFragment : Fragment() {
             val vmmsPw = inputVmmsPassword.text?.toString()?.trim().orEmpty()
             val easyShopId = inputEasyShopId.text?.toString()?.trim().orEmpty()
             val easyShopPw = inputEasyShopPassword.text?.toString()?.trim().orEmpty()
+            val certUser = inputCertUser.text?.toString()?.trim().orEmpty()
+            val certPhone = inputCertPhone.text?.toString()?.trim().orEmpty()
+            val certEmail = inputCertEmail.text?.toString()?.trim().orEmpty()
 
             auth.saveVmmsCredentials(vmmsId, vmmsPw)
             auth.saveEasyShopCredentials(easyShopId, easyShopPw)
+            auth.saveCancelCertProfile(certUser, certPhone, certEmail)
 
             WorkScheduler.schedulePeriodic(requireContext())
-            WorkScheduler.scheduleDailyRecord(requireContext())
             WorkScheduler.scheduleEasyShopPeriodic(requireContext())
             val req = OneTimeWorkRequestBuilder<FetchWidgetWorker>()
                 .setInputData(workDataOf(FetchWidgetWorker.KEY_FORCE_REFRESH to true))

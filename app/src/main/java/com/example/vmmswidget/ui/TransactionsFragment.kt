@@ -16,6 +16,7 @@ import android.text.TextWatcher
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.vmmswidget.R
+import com.example.vmmswidget.data.AuthStore
 import com.example.vmmswidget.net.TransactionsRepository
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -72,6 +73,14 @@ class TransactionsFragment : Fragment() {
         }
 
         requestCodeButton.setOnClickListener {
+            if (!hasCancelCertProfile()) {
+                android.widget.Toast.makeText(
+                    requireContext(),
+                    "설정 > 로그인 설정에서 인증 사용자/전화번호/이메일을 입력하세요.",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+                return@setOnClickListener
+            }
             requestCodeButton.isEnabled = false
             viewLifecycleOwner.lifecycleScope.launch {
                 val param = TransactionsRepository(requireContext()).requestCancelInit()
@@ -232,5 +241,13 @@ class TransactionsFragment : Fragment() {
         approvalDialog?.dismiss()
         approvalDialog = null
         super.onDestroyView()
+    }
+
+    private fun hasCancelCertProfile(): Boolean {
+        val auth = AuthStore(requireContext())
+        val user = auth.getCancelCertUser().orEmpty().trim()
+        val phone = auth.getCancelCertPhone().orEmpty().trim()
+        val email = auth.getCancelCertEmail().orEmpty().trim()
+        return user.isNotBlank() && phone.isNotBlank() && email.isNotBlank()
     }
 }

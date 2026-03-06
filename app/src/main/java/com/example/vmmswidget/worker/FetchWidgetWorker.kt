@@ -19,7 +19,6 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
-import com.example.vmmswidget.widget.WorkScheduler
 import com.example.vmmswidget.data.db.AppDatabase
 import com.example.vmmswidget.data.db.SalesEntity
 
@@ -43,6 +42,10 @@ class FetchWidgetWorker(
             saveAndUpdate("로그인 정보가 없습니다. 앱에서 입력하세요.", 0)
             return@withContext Result.success()
         }
+
+        val repo = TransactionsRepository(appContext)
+        runCatching { syncVmmsPreviousDayIfNeeded(repo) }
+            .onFailure { Log.w("Vmms", "VMMS previous-day sync failed", it) }
 
         val http = HttpClient(appContext)
         val client = http.client
@@ -73,7 +76,7 @@ class FetchWidgetWorker(
             return@withContext Result.success()
         }
 
-        val sales = fetchTodaySalesExcludingCanceled()
+        val sales = fetchTodaySalesExcludingCanceled(repo)
         val display = if (sales != null) {
             "매출 ${sales.amountLabel}"
         } else {
@@ -98,7 +101,6 @@ class FetchWidgetWorker(
         logLast7(db)
         logMissingDays(db)
         saveAndUpdate(display, amountValue)
-        WorkScheduler.scheduleDailyRecord(appContext)
         return@withContext Result.success()
     }
 
@@ -118,9 +120,9 @@ class FetchWidgetWorker(
         }
     }
 
-    private suspend fun fetchTodaySalesExcludingCanceled(): TodaySales? {
+    private suspend fun fetchTodaySalesExcludingCanceled(repo: TransactionsRepository): TodaySales? {
         return try {
-            val total = TransactionsRepository(appContext).fetchTodayPieData().totalAmount
+            val total = repo.fetchTodayPieData().totalAmount
             TodaySales(
                 amountLabel = "${String.format("%,d", total)}원",
                 amountValue = total
@@ -129,6 +131,39 @@ class FetchWidgetWorker(
             Log.w("Vmms", "Failed to fetch today sales excluding canceled", e)
             null
         }
+    }
+
+    private suspend fun syncVmmsPreviousDayIfNeeded(repo: TransactionsRepository) {
+        val dataStore = WidgetDataStore(appContext)
+        val today = LocalDate.now()
+        val yesterday = today.minusDays(1)
+        dataStore.pruneDailyCloseStatusBefore(
+            source = WidgetDataStore.SOURCE_VMMS,
+            cutoffDateExclusive = today.minusDays(365)
+        )
+        dataStore.ensureDailyClosePending(WidgetDataStore.SOURCE_VMMS, yesterday)
+        if (dataStore.isDailyCloseDone(WidgetDataStore.SOURCE_VMMS, yesterday)) {
+            return
+        }
+
+        val daily = repo.fetchDailyTotalExcludingCanceled(yesterday)
+        if (daily == null) {
+            dataStore.markDailyCloseDone(WidgetDataStore.SOURCE_VMMS, yesterday, false)
+            Log.w("Vmms", "VMMS previous-day close sync pending: $yesterday")
+            return
+        }
+
+        val db = AppDatabase.get(appContext)
+        db.salesDao().upsert(
+            SalesEntity(
+                date = yesterday.toString(),
+                amount = daily.amount,
+                createdAt = System.currentTimeMillis()
+            )
+        )
+        db.salesDao().deleteOlderThan(today.minusDays(365).toString())
+        dataStore.markDailyCloseDone(WidgetDataStore.SOURCE_VMMS, yesterday, true)
+        Log.i("Vmms", "VMMS previous-day close sync done: $yesterday=${daily.amount}")
     }
 
     private fun performLogin(client: okhttp3.OkHttpClient, id: String, password: String): Boolean {

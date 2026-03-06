@@ -76,6 +76,44 @@
             android:layout_marginTop="10dp"
             android:text="EasyShop 로그인 확인" />
 
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="16dp"
+            android:background="#E4E8EE" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="취소 인증 정보 (cert/init, cert/compare)"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <EditText
+            android:id="@+id/input_cert_user"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="인증 사용자 ID"
+            android:inputType="text" />
+
+        <EditText
+            android:id="@+id/input_cert_phone"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="인증 전화번호 (예: 01012345678)"
+            android:inputType="phone" />
+
+        <EditText
+            android:id="@+id/input_cert_email"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="인증 이메일"
+            android:inputType="textEmailAddress" />
+
         <Button
             android:id="@+id/btn_save"
             android:layout_width="wrap_content"

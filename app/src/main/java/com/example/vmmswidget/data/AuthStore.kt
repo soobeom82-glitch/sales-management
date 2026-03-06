@@ -49,6 +49,14 @@ class AuthStore(context: Context) {
             .apply()
     }
 
+    fun saveCancelCertProfile(user: String, phone: String, email: String) {
+        prefs.edit()
+            .putString(KEY_CANCEL_CERT_USER, user)
+            .putString(KEY_CANCEL_CERT_PHONE, phone)
+            .putString(KEY_CANCEL_CERT_EMAIL, email)
+            .apply()
+    }
+
     fun getId(): String? = getVmmsId()
     fun getPassword(): String? = getVmmsPassword()
 
@@ -62,6 +70,9 @@ class AuthStore(context: Context) {
     fun getEasyShopPassword(): String? = prefs.getString(KEY_EASYSHOP_PASSWORD, null)
     fun getEasyShopMemberId(): String? = prefs.getString(KEY_EASYSHOP_MEMBER_ID, null)
     fun getEasyShopAutId(): String? = prefs.getString(KEY_EASYSHOP_AUT_ID, null)
+    fun getCancelCertUser(): String? = prefs.getString(KEY_CANCEL_CERT_USER, null)
+    fun getCancelCertPhone(): String? = prefs.getString(KEY_CANCEL_CERT_PHONE, null)
+    fun getCancelCertEmail(): String? = prefs.getString(KEY_CANCEL_CERT_EMAIL, null)
 
     companion object {
         private const val KEY_ID_LEGACY = "id"
@@ -72,5 +83,8 @@ class AuthStore(context: Context) {
         private const val KEY_EASYSHOP_PASSWORD = "easyshop_password"
         private const val KEY_EASYSHOP_MEMBER_ID = "easyshop_member_id"
         private const val KEY_EASYSHOP_AUT_ID = "easyshop_aut_id"
+        private const val KEY_CANCEL_CERT_USER = "cancel_cert_user"
+        private const val KEY_CANCEL_CERT_PHONE = "cancel_cert_phone"
+        private const val KEY_CANCEL_CERT_EMAIL = "cancel_cert_email"
     }
 }

@@ -38,6 +38,8 @@ object WorkScheduler {
             ExistingPeriodicWorkPolicy.UPDATE,
             request
         )
+        // Legacy "23:59:59 one-shot" daily work는 더 이상 사용하지 않는다.
+        WorkManager.getInstance(context).cancelUniqueWork(DAILY_WORK_NAME)
     }
 
     fun scheduleEasyShopPeriodic(context: Context) {
@@ -55,6 +57,8 @@ object WorkScheduler {
             ExistingPeriodicWorkPolicy.UPDATE,
             request
         )
+        // Legacy "23:59:59 one-shot" daily work는 더 이상 사용하지 않는다.
+        WorkManager.getInstance(context).cancelUniqueWork(EASYSHOP_DAILY_WORK_NAME)
     }
 
     fun scheduleDailyRecord(context: Context) {

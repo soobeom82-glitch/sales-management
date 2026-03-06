@@ -3,6 +3,7 @@ package com.example.vmmswidget.data
 import android.content.Context
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import java.time.LocalDate
 
 class WidgetDataStore(context: Context) {
     private val prefs = EncryptedSharedPreferences.create(
@@ -79,7 +80,44 @@ class WidgetDataStore(context: Context) {
 
     fun getEasyShopCanceledTodayCount(): Int = prefs.getInt(KEY_EASYSHOP_CANCELED_TODAY_COUNT, 0)
 
+    fun ensureDailyClosePending(source: String, date: LocalDate) {
+        val key = closeStatusKey(source, date)
+        if (!prefs.contains(key)) {
+            prefs.edit().putBoolean(key, false).apply()
+        }
+    }
+
+    fun isDailyCloseDone(source: String, date: LocalDate): Boolean {
+        return prefs.getBoolean(closeStatusKey(source, date), false)
+    }
+
+    fun markDailyCloseDone(source: String, date: LocalDate, done: Boolean) {
+        prefs.edit().putBoolean(closeStatusKey(source, date), done).apply()
+    }
+
+    fun pruneDailyCloseStatusBefore(source: String, cutoffDateExclusive: LocalDate) {
+        val prefix = "${KEY_DAILY_CLOSE_PREFIX}${source}_"
+        val edit = prefs.edit()
+        prefs.all.keys
+            .asSequence()
+            .filter { it.startsWith(prefix) }
+            .forEach { key ->
+                val dateText = key.removePrefix(prefix)
+                val parsed = runCatching { LocalDate.parse(dateText) }.getOrNull() ?: return@forEach
+                if (parsed.isBefore(cutoffDateExclusive)) {
+                    edit.remove(key)
+                }
+            }
+        edit.apply()
+    }
+
+    private fun closeStatusKey(source: String, date: LocalDate): String {
+        return "${KEY_DAILY_CLOSE_PREFIX}${source}_${date}"
+    }
+
     companion object {
+        const val SOURCE_VMMS = "vmms"
+        const val SOURCE_EASYSHOP = "easyshop"
         private const val KEY_TEXT = "display_text"
         private const val KEY_AMOUNT = "amount_value"
         private const val KEY_UPDATED_AT = "updated_at"
@@ -91,5 +129,6 @@ class WidgetDataStore(context: Context) {
         private const val KEY_EASYSHOP_REFRESHING = "easyshop_refreshing"
         private const val KEY_EASYSHOP_HAS_CANCELED_TODAY = "easyshop_has_canceled_today"
         private const val KEY_EASYSHOP_CANCELED_TODAY_COUNT = "easyshop_canceled_today_count"
+        private const val KEY_DAILY_CLOSE_PREFIX = "daily_close_status_"
     }
 }
