@@ -258,13 +258,12 @@ class SalesChartView @JvmOverloads constructor(
 
         // Y-axis labels (10,000 unit)
         v = 0
-        val labelAreaWidth = paddingLeft - 12f
-        val labelX = 8f
+        val labelRight = chartLeft - 16f
         while (v <= maxGrid) {
             val y = plotTop + h - (h * v / maxGrid.toFloat())
             val text = String.format("%,d", v)
             val textWidth = labelPaint.measureText(text)
-            val x = labelX + (labelAreaWidth - textWidth) / 2f
+            val x = labelRight - textWidth
             canvas.drawText(text, x, y + 12f, labelPaint)
             v += gridStep
         }
@@ -420,22 +419,27 @@ class SalesChartView @JvmOverloads constructor(
 
     private fun computeLayout(): Layout? {
         if (values.isEmpty()) return null
-        val paddingLeft = 140f
         val paddingBottom = 90f
         val paddingTop = 26f
         val paddingRight = 20f
 
         val hasSecondary = secondaryValues.size == values.size
-        val legendAreaHeight = if (hasSecondary) 64f else 0f
-        val plotTop = paddingTop + legendAreaHeight
-        val w = width - paddingLeft - paddingRight
-        val h = (height - plotTop - paddingBottom).coerceAtLeast(1f)
         val rawMax = max(
             values.maxOrNull() ?: 1,
             if (hasSecondary) secondaryValues.maxOrNull() ?: 1 else 1
         )
-        val rounded = ((rawMax + 500) / 1000) * 1000
-        val maxValue = max(1, rounded + 15_000)
+        val baseMax = if (hasSecondary) rawMax else ((rawMax + 500) / 1000) * 1000
+        val extraHeadroom = if (hasSecondary) 10_000 else 15_000
+        val maxValue = max(1, baseMax + extraHeadroom)
+        val gridStep = 10_000
+        val maxGrid = ((maxValue + gridStep - 1) / gridStep) * gridStep
+        val widestLabel = String.format("%,d", maxGrid)
+        val paddingLeft = (labelPaint.measureText(widestLabel) + 56f).coerceAtLeast(170f)
+
+        val legendAreaHeight = if (hasSecondary) 64f else 0f
+        val plotTop = paddingTop + legendAreaHeight
+        val w = (width - paddingLeft - paddingRight).coerceAtLeast(1f)
+        val h = (height - plotTop - paddingBottom).coerceAtLeast(1f)
         val barCount = values.size
         val gap = 24f
         val bandWidth = ((w - gap * (barCount - 1)) / barCount).coerceAtLeast(8f)
