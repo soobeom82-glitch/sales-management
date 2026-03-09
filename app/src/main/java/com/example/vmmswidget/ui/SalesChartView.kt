@@ -23,6 +23,7 @@ class SalesChartView @JvmOverloads constructor(
     private var today: LocalDate? = null
     private var animProgress: Float = 1f
     private var selectedIndex: Int? = null
+    private var onDateClick: ((date: LocalDate, salesAmount: Int, secondaryAmount: Int?) -> Unit)? = null
 
     private val axisPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFF888888.toInt()
@@ -132,6 +133,10 @@ class SalesChartView @JvmOverloads constructor(
         invalidate()
     }
 
+    fun setOnDateClickListener(listener: ((date: LocalDate, salesAmount: Int, secondaryAmount: Int?) -> Unit)?) {
+        onDateClick = listener
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         val layout = computeLayout() ?: return super.onTouchEvent(event)
         when (event.actionMasked) {
@@ -144,6 +149,12 @@ class SalesChartView @JvmOverloads constructor(
                     invalidate()
                 }
                 if (event.actionMasked == MotionEvent.ACTION_UP) {
+                    touched?.let { index ->
+                        val date = dates.getOrNull(index) ?: return@let
+                        val sales = values.getOrNull(index) ?: 0
+                        val secondary = secondaryValues.getOrNull(index)
+                        onDateClick?.invoke(date, sales, secondary)
+                    }
                     performClick()
                 }
                 return true

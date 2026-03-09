@@ -22,6 +22,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.vmmswidget.R
 import com.example.vmmswidget.data.db.AppDatabase
 import com.example.vmmswidget.data.db.EasyShopSalesEntity
+import com.example.vmmswidget.data.db.SalesEntity
 import com.example.vmmswidget.net.EasyShopRepository
 import com.example.vmmswidget.net.TransactionsRepository
 import com.example.vmmswidget.widget.WorkScheduler
@@ -44,6 +45,7 @@ class SalesFragment : Fragment() {
     private var vmmsAnimator: ValueAnimator? = null
     private var dailySalesDialog: AlertDialog? = null
     private var dailySalesLoadJob: Job? = null
+    private var vmmsBackfillJob: Job? = null
     private var easyDailySalesDialog: AlertDialog? = null
     private var easyDailySalesLoadJob: Job? = null
 
@@ -56,6 +58,7 @@ class SalesFragment : Fragment() {
     private var easyTodayDeposit: Int = 0
     private var easyTodayShares: List<TransactionsRepository.TodayItemShare> = emptyList()
     private var easyAnimator: ValueAnimator? = null
+    private var easyBackfillJob: Job? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -70,9 +73,82 @@ class SalesFragment : Fragment() {
         applySalesSubtabRouteIfAny(view)
         initHeaderDates(view)
         initClickActions(view)
+        bindChartBackfillActions(view)
         WorkScheduler.scheduleEasyShopDailyRecord(requireContext())
         loadVmmsData(view)
         loadEasyShopData(view)
+    }
+
+    private fun bindChartBackfillActions(root: View) {
+        root.findViewById<SalesChartView>(R.id.sales_chart)
+            .setOnDateClickListener { date, salesAmount, _ ->
+                if (salesAmount == 0) {
+                    backfillVmmsDate(root, date)
+                }
+            }
+
+        root.findViewById<SalesChartView>(R.id.easyshop_sales_chart)
+            .setOnDateClickListener { date, salesAmount, _ ->
+                if (salesAmount == 0) {
+                    backfillEasyShopDate(root, date)
+                }
+            }
+    }
+
+    private fun backfillVmmsDate(root: View, date: LocalDate) {
+        vmmsBackfillJob?.cancel()
+        val appContext = requireContext().applicationContext
+        vmmsBackfillJob = viewLifecycleOwner.lifecycleScope.launch {
+            val updated = withContext(Dispatchers.IO) {
+                val repo = TransactionsRepository(appContext)
+                val daily = repo.fetchDailyTotalExcludingCanceled(date) ?: return@withContext false
+                AppDatabase.get(appContext).salesDao().upsert(
+                    SalesEntity(
+                        date = daily.date,
+                        amount = daily.amount,
+                        createdAt = System.currentTimeMillis()
+                    )
+                )
+                true
+            }
+            if (!isAdded || !updated) return@launch
+            loadVmmsData(root)
+        }
+    }
+
+    private fun backfillEasyShopDate(root: View, date: LocalDate) {
+        easyBackfillJob?.cancel()
+        val appContext = requireContext().applicationContext
+        easyBackfillJob = viewLifecycleOwner.lifecycleScope.launch {
+            val updated = withContext(Dispatchers.IO) {
+                val repo = EasyShopRepository(appContext)
+                val dao = AppDatabase.get(appContext).easyShopSalesDao()
+
+                val sales = repo.fetchSales(from = date, to = date)
+                if (!sales.success) return@withContext false
+
+                val amount = sumEasyShopSalesByDate(sales.records, date)
+                val existing = dao.getByDate(date.toString())
+                val deposit = repo.fetchDepositAmounts(date, date)
+                val depositAmount = if (deposit.success) {
+                    deposit.amountsByDate[date.toString()] ?: 0
+                } else {
+                    existing?.depositAmount ?: 0
+                }
+
+                dao.upsert(
+                    EasyShopSalesEntity(
+                        date = date.toString(),
+                        amount = amount,
+                        depositAmount = depositAmount,
+                        createdAt = System.currentTimeMillis()
+                    )
+                )
+                true
+            }
+            if (!isAdded || !updated) return@launch
+            loadEasyShopData(root)
+        }
     }
 
     private fun initHeaderDates(root: View) {
@@ -647,6 +723,10 @@ class SalesFragment : Fragment() {
         easyDailySalesLoadJob = null
         easyDailySalesDialog?.dismiss()
         easyDailySalesDialog = null
+        vmmsBackfillJob?.cancel()
+        vmmsBackfillJob = null
+        easyBackfillJob?.cancel()
+        easyBackfillJob = null
         super.onDestroyView()
     }
 }
