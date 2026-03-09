@@ -1,18 +1,10 @@
 package com.example.vmmswidget.data
 
 import android.content.Context
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import java.time.LocalDate
 
 class WidgetDataStore(context: Context) {
-    private val prefs = EncryptedSharedPreferences.create(
-        context,
-        "widget_data",
-        MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
+    private val prefs = EncryptedPrefsFactory.create(context, "widget_data")
 
     fun saveDisplayText(text: String) {
         prefs.edit().putString(KEY_TEXT, text).apply()

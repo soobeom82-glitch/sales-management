@@ -1,17 +1,9 @@
 package com.example.vmmswidget.data
 
 import android.content.Context
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 
 class AuthStore(context: Context) {
-    private val prefs = EncryptedSharedPreferences.create(
-        context,
-        "auth_store",
-        MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
+    private val prefs = EncryptedPrefsFactory.create(context, "auth_store")
 
     fun saveCredentials(id: String, password: String) {
         saveVmmsCredentials(id, password)

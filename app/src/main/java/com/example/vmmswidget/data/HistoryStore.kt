@@ -1,8 +1,6 @@
 package com.example.vmmswidget.data
 
 import android.content.Context
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalDate
@@ -10,13 +8,7 @@ import java.time.LocalDate
 data class DailySales(val date: LocalDate, val amount: Int)
 
 class HistoryStore(context: Context) {
-    private val prefs = EncryptedSharedPreferences.create(
-        context,
-        "history_store",
-        MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
+    private val prefs = EncryptedPrefsFactory.create(context, "history_store")
 
     fun upsert(date: LocalDate, amount: Int) {
         val list = getAll().toMutableList()

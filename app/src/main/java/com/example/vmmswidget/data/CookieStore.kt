@@ -1,19 +1,11 @@
 package com.example.vmmswidget.data
 
 import android.content.Context
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import okhttp3.Cookie
 import okhttp3.HttpUrl
 
 class CookieStore(context: Context) {
-    private val prefs = EncryptedSharedPreferences.create(
-        context,
-        "cookie_store",
-        MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
+    private val prefs = EncryptedPrefsFactory.create(context, "cookie_store")
 
     fun saveCookies(url: HttpUrl, cookies: List<Cookie>) {
         val key = keyFor(url)
