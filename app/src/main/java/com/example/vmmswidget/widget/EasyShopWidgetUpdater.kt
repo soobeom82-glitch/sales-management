@@ -27,7 +27,7 @@ object EasyShopWidgetUpdater {
         val dataStore = WidgetDataStore(context)
         val salesAmount = dataStore.getEasyShopAmount()
         val depositAmount = dataStore.getEasyShopDepositAmount()
-        val updatedAt = dataStore.getEasyShopUpdatedAt()
+        val updatedAt = formatUpdatedAt(dataStore.getEasyShopUpdatedAt())
         val refreshing = dataStore.isEasyShopRefreshing()
         val hasCanceledToday = dataStore.hasEasyShopCanceledToday()
         val canceledTodayCount = dataStore.getEasyShopCanceledTodayCount()
@@ -157,6 +157,14 @@ object EasyShopWidgetUpdater {
             dp.toFloat(),
             context.resources.displayMetrics
         ).toInt()
+    }
+
+    private fun formatUpdatedAt(raw: String): String {
+        val value = raw.trim()
+        if (value.length >= 5 && value[2] == ':') {
+            return value.substring(0, 5)
+        }
+        return value
     }
 
     private fun pickBackgroundRes(amount: Int): Int {

@@ -26,7 +26,7 @@ object WidgetUpdater {
         val dataStore = WidgetDataStore(context)
         val text = dataStore.getDisplayText()
         val amount = dataStore.getAmount()
-        val updatedAt = dataStore.getUpdatedAt()
+        val updatedAt = formatUpdatedAt(dataStore.getUpdatedAt())
         val refreshing = dataStore.isRefreshing()
         val bgRes = pickBackgroundRes(amount)
         val history = kotlinx.coroutines.runBlocking {
@@ -191,6 +191,14 @@ object WidgetUpdater {
             dp.toFloat(),
             context.resources.displayMetrics
         ).toInt()
+    }
+
+    private fun formatUpdatedAt(raw: String): String {
+        val value = raw.trim()
+        if (value.length >= 5 && value[2] == ':') {
+            return value.substring(0, 5)
+        }
+        return value
     }
 
     // no debug footer text

@@ -104,7 +104,7 @@ class FetchEasyShopWidgetWorker(
         hasCanceledToday: Boolean,
         canceledTodayCount: Int
     ) {
-        val now = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"))
+        val now = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
         WidgetDataStore(appContext).apply {
             saveEasyShopDisplayText(text)
             saveEasyShopAmount(salesAmount)

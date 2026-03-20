@@ -256,7 +256,7 @@ class FetchWidgetWorker(
     }
 
     private fun saveAndUpdate(text: String, amountValue: Int) {
-        val now = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"))
+        val now = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
         WidgetDataStore(appContext).saveDisplayText(text)
         WidgetDataStore(appContext).saveAmount(amountValue)
         WidgetDataStore(appContext).saveUpdatedAt(now)

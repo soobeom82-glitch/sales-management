@@ -22,7 +22,7 @@ class WidgetDataStore(context: Context) {
         prefs.edit().putString(KEY_UPDATED_AT, text).apply()
     }
 
-    fun getUpdatedAt(): String = prefs.getString(KEY_UPDATED_AT, "--:--:--") ?: "--:--:--"
+    fun getUpdatedAt(): String = prefs.getString(KEY_UPDATED_AT, "--:--") ?: "--:--"
 
     fun saveRefreshing(value: Boolean) {
         prefs.edit().putBoolean(KEY_REFRESHING, value).apply()
@@ -52,7 +52,7 @@ class WidgetDataStore(context: Context) {
         prefs.edit().putString(KEY_EASYSHOP_UPDATED_AT, text).apply()
     }
 
-    fun getEasyShopUpdatedAt(): String = prefs.getString(KEY_EASYSHOP_UPDATED_AT, "--:--:--") ?: "--:--:--"
+    fun getEasyShopUpdatedAt(): String = prefs.getString(KEY_EASYSHOP_UPDATED_AT, "--:--") ?: "--:--"
 
     fun saveEasyShopRefreshing(value: Boolean) {
         prefs.edit().putBoolean(KEY_EASYSHOP_REFRESHING, value).apply()
