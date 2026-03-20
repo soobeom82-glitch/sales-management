@@ -61,8 +61,12 @@ class SalesFragment : Fragment() {
     private var easyDiff: Int = 0
     private var easyTodayTotal: Int = 0
     private var easyTodayDeposit: Int = 0
+    private var easyTopDate: LocalDate = LocalDate.now()
+    private var easyTopSales: Int = 0
+    private var easyTopDeposit: Int = 0
     private var easyTodayShares: List<TransactionsRepository.TodayItemShare> = emptyList()
     private var easyAnimator: ValueAnimator? = null
+    private var easyTopAnimator: ValueAnimator? = null
     private var easyBackfillJob: Job? = null
 
     override fun onCreateView(
@@ -94,7 +98,8 @@ class SalesFragment : Fragment() {
             }
 
         root.findViewById<SalesChartView>(R.id.easyshop_sales_chart)
-            .setOnDateClickListener { date, salesAmount, _ ->
+            .setOnDateClickListener { date, salesAmount, secondaryAmount ->
+                selectEasyShopTopDate(root, date, salesAmount, secondaryAmount ?: 0)
                 if (salesAmount == 0) {
                     backfillEasyShopDate(root, date)
                 }
@@ -180,6 +185,20 @@ class SalesFragment : Fragment() {
             if (!isAdded || !updated) return@launch
             loadEasyShopData(root)
         }
+    }
+
+    private fun selectEasyShopTopDate(root: View, date: LocalDate, salesAmount: Int, depositAmount: Int) {
+        easyTopDate = date
+        easyTopSales = salesAmount
+        easyTopDeposit = depositAmount
+        root.findViewById<TextView>(R.id.text_easyshop_pie_date).text =
+            date.format(DateTimeFormatter.ofPattern("yyyy.MM.dd"))
+        val compare = root.findViewById<TodayCompareBarChartView>(R.id.easyshop_compare_chart)
+        easyAnimator?.cancel()
+        compare.setData(easyTopDeposit, easyTopSales)
+        compare.setAnimationProgress(0f)
+        easyTopAnimator?.cancel()
+        easyTopAnimator = startEasyCompareAnimation(compare)
     }
 
     private fun initHeaderDates(root: View) {
@@ -438,15 +457,6 @@ class SalesFragment : Fragment() {
         val amountByDate = historyRows.associate { it.date to it.amount }
         val depositByDate = historyRows.associate { it.date to it.depositAmount }
 
-        easyDates = (7L downTo 1L).map { today.minusDays(it) }
-        val prevDates = (14L downTo 8L).map { today.minusDays(it) }
-        easyValues = easyDates.map { d -> amountByDate[d.toString()] ?: 0 }
-        easyDepositValues = easyDates.map { d -> depositByDate[d.toString()] ?: 0 }
-
-        val easyTotal = easyValues.sum()
-        val easyPrevTotal = prevDates.sumOf { d -> amountByDate[d.toString()] ?: 0 }
-        easyDiff = easyTotal - easyPrevTotal
-
         if (todayResult != null) {
             if (todayResult.success) {
                 val nonCanceled = todayResult.records.filterNot { it.isCanceled }
@@ -481,12 +491,44 @@ class SalesFragment : Fragment() {
             easyTodayDeposit = todayDepositAmount
         }
 
+        // 최근 7일: 오늘 포함 (D-6 ~ D)
+        easyDates = (6L downTo 0L).map { today.minusDays(it) }
+        // 이전 7일: D-13 ~ D-7
+        val prevDates = (13L downTo 7L).map { today.minusDays(it) }
+        easyValues = easyDates.map { d ->
+            if (d == today) easyTodayTotal else (amountByDate[d.toString()] ?: 0)
+        }
+        easyDepositValues = easyDates.map { d ->
+            if (d == today) easyTodayDeposit else (depositByDate[d.toString()] ?: 0)
+        }
+
+        val easyTotal = easyValues.sum()
+        val easyPrevTotal = prevDates.sumOf { d -> amountByDate[d.toString()] ?: 0 }
+        easyDiff = easyTotal - easyPrevTotal
+
+        if (!easyDates.contains(easyTopDate)) {
+            easyTopDate = today
+        }
+        easyTopSales = if (easyTopDate == today) {
+            easyTodayTotal
+        } else {
+            amountByDate[easyTopDate.toString()] ?: 0
+        }
+        easyTopDeposit = if (easyTopDate == today) {
+            easyTodayDeposit
+        } else {
+            depositByDate[easyTopDate.toString()] ?: 0
+        }
+
         val fmt = DateTimeFormatter.ofPattern("yyyy.MM.dd")
         range.text = if (easyDates.isNotEmpty()) {
             "${easyDates.first().format(fmt)} - ${easyDates.last().format(fmt)}"
         } else {
             "--"
         }
+        // 상단 날짜(오늘 막대 비교 영역)도 선택된 일자로 맞춘다.
+        range.rootView.findViewById<TextView>(R.id.text_easyshop_pie_date).text =
+            easyTopDate.format(fmt)
 
         if (showEmptyState) {
             empty.visibility = when {
@@ -507,7 +549,7 @@ class SalesFragment : Fragment() {
 
         chart.setData(easyDates, easyValues, today)
         chart.setSecondaryData(easyDepositValues)
-        compare.setData(easyTodayDeposit, easyTodayTotal)
+        compare.setData(easyTopDeposit, easyTopSales)
 
         easyAnimator?.cancel()
         if (animate) {
@@ -596,8 +638,10 @@ class SalesFragment : Fragment() {
                 chart.setData(easyDates, easyValues, LocalDate.now())
                 chart.setSecondaryData(easyDepositValues)
                 chart.setAnimationProgress(0f)
-                compare.setData(easyTodayDeposit, easyTodayTotal)
+                compare.setData(easyTopDeposit, easyTopSales)
                 compare.setAnimationProgress(0f)
+                root.findViewById<TextView>(R.id.text_easyshop_pie_date).text =
+                    easyTopDate.format(DateTimeFormatter.ofPattern("yyyy.MM.dd"))
                 easyAnimator?.cancel()
                 easyAnimator = startEasyAnimation(chart, compare, total, easyValues.sum(), easyDiff)
             }
@@ -722,6 +766,18 @@ class SalesFragment : Fragment() {
         }
     }
 
+    private fun startEasyCompareAnimation(compareChart: TodayCompareBarChartView): ValueAnimator {
+        return ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 650
+            interpolator = DecelerateInterpolator()
+            addUpdateListener { anim ->
+                val f = anim.animatedValue as Float
+                compareChart.setAnimationProgress(f)
+            }
+            start()
+        }
+    }
+
     private fun startPieOnlyAnimation(pieChart: TodayPieChartView): ValueAnimator {
         return ValueAnimator.ofFloat(0f, 1f).apply {
             duration = 650
@@ -771,9 +827,11 @@ class SalesFragment : Fragment() {
         vmmsAnimator?.cancel()
         vmmsPieAnimator?.cancel()
         easyAnimator?.cancel()
+        easyTopAnimator?.cancel()
         vmmsAnimator = null
         vmmsPieAnimator = null
         easyAnimator = null
+        easyTopAnimator = null
         super.onStop()
     }
 
@@ -781,9 +839,11 @@ class SalesFragment : Fragment() {
         vmmsAnimator?.cancel()
         vmmsPieAnimator?.cancel()
         easyAnimator?.cancel()
+        easyTopAnimator?.cancel()
         vmmsAnimator = null
         vmmsPieAnimator = null
         easyAnimator = null
+        easyTopAnimator = null
         dailySalesLoadJob?.cancel()
         dailySalesLoadJob = null
         dailySalesDialog?.dismiss()
