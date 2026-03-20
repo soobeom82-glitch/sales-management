@@ -182,14 +182,19 @@ class SalesFragment : Fragment() {
 
             val amountByDate = allRecords.associate { it.date to it.amount }
             val today = LocalDate.now()
-            vmmsDates = (7L downTo 1L).map { today.minusDays(it) }
-            val prevDates = (14L downTo 8L).map { today.minusDays(it) }
-            vmmsValues = vmmsDates.map { d -> amountByDate[d.toString()] ?: 0 }
+            vmmsTodayTotal = pieData.totalAmount
+            vmmsTodayShares = pieData.shares
+
+            // 최근 7일: 오늘 포함 (D-6 ~ D)
+            vmmsDates = (6L downTo 0L).map { today.minusDays(it) }
+            // 이전 7일: D-13 ~ D-7
+            val prevDates = (13L downTo 7L).map { today.minusDays(it) }
+            vmmsValues = vmmsDates.map { d ->
+                if (d == today) vmmsTodayTotal else (amountByDate[d.toString()] ?: 0)
+            }
             val vmmsTotal = vmmsValues.sum()
             val prevTotal = prevDates.sumOf { d -> amountByDate[d.toString()] ?: 0 }
             vmmsDiff = vmmsTotal - prevTotal
-            vmmsTodayTotal = pieData.totalAmount
-            vmmsTodayShares = pieData.shares
 
             if (vmmsDates.isNotEmpty()) {
                 val fmt = DateTimeFormatter.ofPattern("yyyy.MM.dd")
