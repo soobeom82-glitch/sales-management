@@ -174,7 +174,11 @@ class TransactionsRepository(private val context: Context) {
         }
     }
 
-    suspend fun fetchTodayPieData(): TodayPieData = withContext(Dispatchers.IO) {
+    suspend fun fetchTodayPieData(): TodayPieData {
+        return fetchPieDataForDate(LocalDate.now())
+    }
+
+    suspend fun fetchPieDataForDate(targetDate: LocalDate): TodayPieData = withContext(Dispatchers.IO) {
         val auth = AuthStore(context)
         val id = auth.getId()
         val password = auth.getPassword()
@@ -182,7 +186,6 @@ class TransactionsRepository(private val context: Context) {
 
         val http = HttpClient(context)
         val client = http.client
-        val today = LocalDate.now()
 
         var pageNo = 1
         var totalPages = 1
@@ -192,7 +195,7 @@ class TransactionsRepository(private val context: Context) {
             .associateBy { it.colNo }
 
         while (pageNo <= totalPages) {
-            val body = fetchList(client, http, id, password, today, today, pageNo)
+            val body = fetchList(client, http, id, password, targetDate, targetDate, pageNo)
                 ?: return@withContext TodayPieData(0, emptyList())
             try {
                 val json = JSONObject(body)

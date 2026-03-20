@@ -42,10 +42,15 @@ class SalesFragment : Fragment() {
     private var vmmsDiff: Int = 0
     private var vmmsTodayTotal: Int = 0
     private var vmmsTodayShares: List<TransactionsRepository.TodayItemShare> = emptyList()
+    private var vmmsPieDate: LocalDate = LocalDate.now()
+    private var vmmsPieTotal: Int = 0
+    private var vmmsPieShares: List<TransactionsRepository.TodayItemShare> = emptyList()
     private var vmmsAnimator: ValueAnimator? = null
+    private var vmmsPieAnimator: ValueAnimator? = null
     private var dailySalesDialog: AlertDialog? = null
     private var dailySalesLoadJob: Job? = null
     private var vmmsBackfillJob: Job? = null
+    private var vmmsPieLoadJob: Job? = null
     private var easyDailySalesDialog: AlertDialog? = null
     private var easyDailySalesLoadJob: Job? = null
 
@@ -82,6 +87,7 @@ class SalesFragment : Fragment() {
     private fun bindChartBackfillActions(root: View) {
         root.findViewById<SalesChartView>(R.id.sales_chart)
             .setOnDateClickListener { date, salesAmount, _ ->
+                selectVmmsPieDate(root, date)
                 if (salesAmount == 0) {
                     backfillVmmsDate(root, date)
                 }
@@ -93,6 +99,31 @@ class SalesFragment : Fragment() {
                     backfillEasyShopDate(root, date)
                 }
             }
+    }
+
+    private fun selectVmmsPieDate(root: View, date: LocalDate) {
+        vmmsPieDate = date
+        vmmsPieLoadJob?.cancel()
+        val appContext = requireContext().applicationContext
+        val pie = root.findViewById<TodayPieChartView>(R.id.today_pie_chart)
+        val dateText = root.findViewById<TextView>(R.id.text_today_pie_date)
+        vmmsPieLoadJob = viewLifecycleOwner.lifecycleScope.launch {
+            val pieData = if (date == LocalDate.now() && vmmsTodayShares.isNotEmpty()) {
+                TransactionsRepository.TodayPieData(vmmsTodayTotal, vmmsTodayShares)
+            } else {
+                withContext(Dispatchers.IO) {
+                    TransactionsRepository(appContext).fetchPieDataForDate(date)
+                }
+            }
+            if (!isAdded) return@launch
+            vmmsPieTotal = pieData.totalAmount
+            vmmsPieShares = pieData.shares
+            dateText.text = date.format(DateTimeFormatter.ofPattern("yyyy.MM.dd"))
+            pie.setData(vmmsPieTotal, vmmsPieShares)
+            pie.setAnimationProgress(0f)
+            vmmsPieAnimator?.cancel()
+            vmmsPieAnimator = startPieOnlyAnimation(pie)
+        }
     }
 
     private fun backfillVmmsDate(root: View, date: LocalDate) {
@@ -195,6 +226,19 @@ class SalesFragment : Fragment() {
             val vmmsTotal = vmmsValues.sum()
             val prevTotal = prevDates.sumOf { d -> amountByDate[d.toString()] ?: 0 }
             vmmsDiff = vmmsTotal - prevTotal
+            if (!vmmsDates.contains(vmmsPieDate)) {
+                vmmsPieDate = today
+            }
+            val pieDataForDate = if (vmmsPieDate == today) {
+                pieData
+            } else {
+                withContext(Dispatchers.IO) {
+                    TransactionsRepository(requireContext().applicationContext)
+                        .fetchPieDataForDate(vmmsPieDate)
+                }
+            }
+            vmmsPieTotal = pieDataForDate.totalAmount
+            vmmsPieShares = pieDataForDate.shares
 
             if (vmmsDates.isNotEmpty()) {
                 val fmt = DateTimeFormatter.ofPattern("yyyy.MM.dd")
@@ -202,9 +246,11 @@ class SalesFragment : Fragment() {
             } else {
                 range.text = "--"
             }
+            root.findViewById<TextView>(R.id.text_today_pie_date).text =
+                vmmsPieDate.format(DateTimeFormatter.ofPattern("yyyy.MM.dd"))
             chart.setData(vmmsDates, vmmsValues, LocalDate.now())
             chart.setAnimationProgress(0f)
-            pie.setData(vmmsTodayTotal, vmmsTodayShares)
+            pie.setData(vmmsPieTotal, vmmsPieShares)
             pie.setAnimationProgress(0f)
             vmmsAnimator?.cancel()
             vmmsAnimator = startAnimation(
@@ -535,8 +581,10 @@ class SalesFragment : Fragment() {
             if (vmmsDates.isNotEmpty()) {
                 chart.setData(vmmsDates, vmmsValues, LocalDate.now())
                 chart.setAnimationProgress(0f)
-                pie.setData(vmmsTodayTotal, vmmsTodayShares)
+                pie.setData(vmmsPieTotal, vmmsPieShares)
                 pie.setAnimationProgress(0f)
+                root.findViewById<TextView>(R.id.text_today_pie_date).text =
+                    vmmsPieDate.format(DateTimeFormatter.ofPattern("yyyy.MM.dd"))
                 vmmsAnimator?.cancel()
                 vmmsAnimator = startAnimation(chart, pie, total, vmmsValues.sum(), vmmsDiff)
             }
@@ -674,6 +722,18 @@ class SalesFragment : Fragment() {
         }
     }
 
+    private fun startPieOnlyAnimation(pieChart: TodayPieChartView): ValueAnimator {
+        return ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 650
+            interpolator = DecelerateInterpolator()
+            addUpdateListener { anim ->
+                val f = anim.animatedValue as Float
+                pieChart.setAnimationProgress(f)
+            }
+            start()
+        }
+    }
+
     private fun makeTotalText(animatedTotal: Int, animatedDiff: Int, diff: Int): CharSequence {
         val changeText: String
         val changeColor: Int
@@ -709,16 +769,20 @@ class SalesFragment : Fragment() {
 
     override fun onStop() {
         vmmsAnimator?.cancel()
+        vmmsPieAnimator?.cancel()
         easyAnimator?.cancel()
         vmmsAnimator = null
+        vmmsPieAnimator = null
         easyAnimator = null
         super.onStop()
     }
 
     override fun onDestroyView() {
         vmmsAnimator?.cancel()
+        vmmsPieAnimator?.cancel()
         easyAnimator?.cancel()
         vmmsAnimator = null
+        vmmsPieAnimator = null
         easyAnimator = null
         dailySalesLoadJob?.cancel()
         dailySalesLoadJob = null
@@ -730,6 +794,8 @@ class SalesFragment : Fragment() {
         easyDailySalesDialog = null
         vmmsBackfillJob?.cancel()
         vmmsBackfillJob = null
+        vmmsPieLoadJob?.cancel()
+        vmmsPieLoadJob = null
         easyBackfillJob?.cancel()
         easyBackfillJob = null
         super.onDestroyView()
