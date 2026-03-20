@@ -66,7 +66,6 @@ class SalesFragment : Fragment() {
     private var easyTopDeposit: Int = 0
     private var easyTodayShares: List<TransactionsRepository.TodayItemShare> = emptyList()
     private var easyAnimator: ValueAnimator? = null
-    private var easyTopAnimator: ValueAnimator? = null
     private var easyBackfillJob: Job? = null
 
     override fun onCreateView(
@@ -183,7 +182,7 @@ class SalesFragment : Fragment() {
                 true
             }
             if (!isAdded || !updated) return@launch
-            loadEasyShopData(root)
+            loadEasyShopData(root, animateOnRefresh = false)
         }
     }
 
@@ -194,11 +193,9 @@ class SalesFragment : Fragment() {
         root.findViewById<TextView>(R.id.text_easyshop_pie_date).text =
             date.format(DateTimeFormatter.ofPattern("yyyy.MM.dd"))
         val compare = root.findViewById<TodayCompareBarChartView>(R.id.easyshop_compare_chart)
-        easyAnimator?.cancel()
         compare.setData(easyTopDeposit, easyTopSales)
-        compare.setAnimationProgress(0f)
-        easyTopAnimator?.cancel()
-        easyTopAnimator = startEasyCompareAnimation(compare)
+        // Click interaction should only swap values, not replay bar animation.
+        compare.setAnimationProgress(1f)
     }
 
     private fun initHeaderDates(root: View) {
@@ -282,7 +279,7 @@ class SalesFragment : Fragment() {
         }
     }
 
-    private fun loadEasyShopData(root: View) {
+    private fun loadEasyShopData(root: View, animateOnRefresh: Boolean = true) {
         val chart = root.findViewById<SalesChartView>(R.id.easyshop_sales_chart)
         val compare = root.findViewById<TodayCompareBarChartView>(R.id.easyshop_compare_chart)
         val range = root.findViewById<TextView>(R.id.text_easyshop_range)
@@ -324,7 +321,7 @@ class SalesFragment : Fragment() {
                 range = range,
                 total = total,
                 empty = empty,
-                animate = true,
+                animate = animateOnRefresh,
                 showEmptyState = true
             )
         }
@@ -766,18 +763,6 @@ class SalesFragment : Fragment() {
         }
     }
 
-    private fun startEasyCompareAnimation(compareChart: TodayCompareBarChartView): ValueAnimator {
-        return ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 650
-            interpolator = DecelerateInterpolator()
-            addUpdateListener { anim ->
-                val f = anim.animatedValue as Float
-                compareChart.setAnimationProgress(f)
-            }
-            start()
-        }
-    }
-
     private fun startPieOnlyAnimation(pieChart: TodayPieChartView): ValueAnimator {
         return ValueAnimator.ofFloat(0f, 1f).apply {
             duration = 650
@@ -827,11 +812,9 @@ class SalesFragment : Fragment() {
         vmmsAnimator?.cancel()
         vmmsPieAnimator?.cancel()
         easyAnimator?.cancel()
-        easyTopAnimator?.cancel()
         vmmsAnimator = null
         vmmsPieAnimator = null
         easyAnimator = null
-        easyTopAnimator = null
         super.onStop()
     }
 
@@ -839,11 +822,9 @@ class SalesFragment : Fragment() {
         vmmsAnimator?.cancel()
         vmmsPieAnimator?.cancel()
         easyAnimator?.cancel()
-        easyTopAnimator?.cancel()
         vmmsAnimator = null
         vmmsPieAnimator = null
         easyAnimator = null
-        easyTopAnimator = null
         dailySalesLoadJob?.cancel()
         dailySalesLoadJob = null
         dailySalesDialog?.dismiss()
