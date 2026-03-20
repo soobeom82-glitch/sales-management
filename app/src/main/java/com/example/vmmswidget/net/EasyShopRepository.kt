@@ -427,11 +427,12 @@ class EasyShopRepository(private val context: Context) {
                 return@withContext buildSalesFetchFailure(directParsed.message)
             }
             val merged = mergeSalesRecords(directParsed.records)
+            val nonCanceledTotal = merged.filterNot { it.isCanceled }.sumOf { it.amount }
             return@withContext SalesFetchResult(
                 success = true,
                 message = "EasyShop 매출 조회 성공 (${merged.size}건)",
                 records = merged,
-                totalAmount = merged.sumOf { it.amount }
+                totalAmount = nonCanceledTotal
             )
         }
 
@@ -474,11 +475,12 @@ class EasyShopRepository(private val context: Context) {
         }
 
         val merged = mergeSalesRecords(dayRecords)
+        val nonCanceledTotal = merged.filterNot { it.isCanceled }.sumOf { it.amount }
         return@withContext SalesFetchResult(
             success = true,
             message = "EasyShop 일자별 매출 조회 성공 (${merged.size}건, 성공일=$successDays, 실패일=$failDays)",
             records = merged,
-            totalAmount = merged.sumOf { it.amount }
+            totalAmount = nonCanceledTotal
         )
     }
 
@@ -894,26 +896,59 @@ class EasyShopRepository(private val context: Context) {
             val rawData = parseDatasetCol(row, "data_set")
             if (rawData.isBlank()) continue
             val fields = rawData.split("@@")
+            val trxCanClCd = fields.getOrElse(1) { "" }.trim()
+            val status = fields.getOrElse(3) { "" }.trim()
+            val transactionDateRaw = fields.getOrElse(4) { "" }.trim()
+            val rawAmount = fields.getOrElse(11) { "0" }.trim().replace(",", "")
+            val signedAmount = parseSignedAmount(rawAmount)
+            val orgnlAprvDt = fields.getOrElse(15) { "" }.trim()
+            val esCanYn = fields.getOrElse(24) { "" }.trim()
+            val isCanceled = status.contains("취소") ||
+                (trxCanClCd.isNotBlank() && trxCanClCd !in setOf("0", "7")) ||
+                signedAmount < 0 ||
+                (esCanYn.equals("Y", ignoreCase = true)) ||
+                hasOriginalApprovalReference(orgnlAprvDt)
             out.add(
                 SalesRecord(
                     seqNo = seqNo,
                     transactionNo = fields.getOrElse(0) { "" }.trim(),
                     terminalNo = fields.getOrElse(2) { "" }.trim(),
-                    status = fields.getOrElse(3) { "" }.trim(),
-                    transactionDate = parseEasyShopDate(fields.getOrElse(4) { "" }.trim()),
-                    transactionTime = formatEasyShopDateTime(fields.getOrElse(4) { "" }.trim()),
+                    status = status,
+                    transactionDate = parseEasyShopDate(transactionDateRaw),
+                    transactionTime = formatEasyShopDateTime(transactionDateRaw),
                     cardNo = fields.getOrElse(6) { "" }.trim(),
                     cardType = fields.getOrElse(7) { "" }.trim(),
                     issuerName = fields.getOrElse(8) { "" }.trim(),
                     purchaseName = fields.getOrElse(9) { "" }.trim(),
                     approvalNo = fields.getOrElse(10) { "" }.trim(),
-                    amount = fields.getOrElse(11) { "0" }.trim().filter { it.isDigit() }.toIntOrNull() ?: 0,
+                    amount = kotlin.math.abs(signedAmount),
                     responseText = fields.getOrElse(17) { "" }.trim(),
-                    isCanceled = fields.getOrElse(3) { "" }.contains("취소")
+                    isCanceled = isCanceled
                 )
             )
         }
         return ParsedSales(success = true, message = "OK", records = out)
+    }
+
+    private fun parseSignedAmount(raw: String): Int {
+        val cleaned = raw.trim().replace(",", "")
+        if (cleaned.isBlank()) return 0
+        cleaned.toIntOrNull()?.let { return it }
+
+        val negative = cleaned.startsWith("-")
+        val digits = cleaned.filter { it.isDigit() }
+        if (digits.isBlank()) return 0
+        val value = digits.toIntOrNull() ?: return 0
+        return if (negative) -value else value
+    }
+
+    private fun hasOriginalApprovalReference(raw: String): Boolean {
+        val v = raw.trim()
+        if (v.isBlank()) return false
+        return v != "20" &&
+            v != "000000" &&
+            v != "00000000" &&
+            v != "20000000"
     }
 
     private fun extractHtmlErrorMessage(html: String): String {
