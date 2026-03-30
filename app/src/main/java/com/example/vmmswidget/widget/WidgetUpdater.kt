@@ -26,6 +26,7 @@ object WidgetUpdater {
         val dataStore = WidgetDataStore(context)
         val text = dataStore.getDisplayText()
         val amount = dataStore.getAmount()
+        val latestTradeTime = dataStore.getVmmsLatestTradeTime().trim()
         val updatedAt = formatUpdatedAt(dataStore.getUpdatedAt())
         val refreshing = dataStore.isRefreshing()
         val bgRes = pickBackgroundRes(amount)
@@ -86,12 +87,17 @@ object WidgetUpdater {
             views.setTextViewText(R.id.widget_deposit_label, "입금")
             views.setTextViewText(R.id.widget_sales_amount, "${String.format("%,d", amount)}원")
             views.setTextViewText(R.id.widget_deposit_amount, "-")
+            views.setTextViewText(
+                R.id.widget_latest_trade_time,
+                if (latestTradeTime.isNotBlank()) "최근 $latestTradeTime" else "최근 -"
+            )
             views.setTextViewText(R.id.widget_updated, updatedAt)
             views.setInt(R.id.widget_container, "setBackgroundResource", bgRes)
             views.setImageViewBitmap(R.id.widget_chart, chart)
             views.setViewVisibility(R.id.widget_content, View.GONE)
             views.setViewVisibility(R.id.widget_easyshop_amount_block, View.VISIBLE)
             views.setViewVisibility(R.id.widget_deposit_row, View.GONE)
+            views.setViewVisibility(R.id.widget_latest_trade_time, View.VISIBLE)
             views.setViewVisibility(R.id.widget_progress, if (refreshing) View.VISIBLE else View.GONE)
             views.setTextColor(R.id.widget_avg, Color.parseColor("#334155"))
             views.setTextColor(R.id.widget_title, Color.parseColor("#334155"))
@@ -100,6 +106,7 @@ object WidgetUpdater {
             views.setTextColor(R.id.widget_sales_amount, Color.parseColor("#334155"))
             views.setTextColor(R.id.widget_deposit_label, Color.parseColor("#334155"))
             views.setTextColor(R.id.widget_deposit_amount, Color.parseColor("#334155"))
+            views.setTextColor(R.id.widget_latest_trade_time, Color.parseColor("#64748B"))
             views.setTextColor(R.id.widget_order_label, Color.parseColor("#334155"))
             views.setTextColor(R.id.widget_updated, Color.parseColor("#334155"))
             val spacer = "\u00A0\u00A0"
@@ -156,6 +163,7 @@ object WidgetUpdater {
             views.setOnClickPendingIntent(R.id.widget_sales_amount, openTransactionsPending)
             views.setOnClickPendingIntent(R.id.widget_deposit_label, openTransactionsPending)
             views.setOnClickPendingIntent(R.id.widget_deposit_amount, openTransactionsPending)
+            views.setOnClickPendingIntent(R.id.widget_latest_trade_time, openTransactionsPending)
             views.setOnClickPendingIntent(R.id.widget_title, openTransactionsPending)
 
             val openOrder = Intent(context, MainActivity::class.java).apply {

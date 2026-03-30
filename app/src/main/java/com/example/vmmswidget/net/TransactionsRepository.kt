@@ -45,7 +45,8 @@ class TransactionsRepository(private val context: Context) {
 
     data class TodayPieData(
         val totalAmount: Int,
-        val shares: List<TodayItemShare>
+        val shares: List<TodayItemShare>,
+        val latestTransactionTime: String? = null
     )
 
     data class DailyTotal(
@@ -182,7 +183,11 @@ class TransactionsRepository(private val context: Context) {
         val auth = AuthStore(context)
         val id = auth.getId()
         val password = auth.getPassword()
-        if (id.isNullOrBlank() || password.isNullOrBlank()) return@withContext TodayPieData(0, emptyList())
+        if (id.isNullOrBlank() || password.isNullOrBlank()) return@withContext TodayPieData(
+            totalAmount = 0,
+            shares = emptyList(),
+            latestTransactionTime = null
+        )
 
         val http = HttpClient(context)
         val client = http.client
@@ -190,13 +195,18 @@ class TransactionsRepository(private val context: Context) {
         var pageNo = 1
         var totalPages = 1
         val amountByItem = LinkedHashMap<String, Int>()
+        var latestRawDateTime: String? = null
         val mapByCol = AppDatabase.get(context).productMappingDao()
             .getAll()
             .associateBy { it.colNo }
 
         while (pageNo <= totalPages) {
             val body = fetchList(client, http, id, password, targetDate, targetDate, pageNo)
-                ?: return@withContext TodayPieData(0, emptyList())
+                ?: return@withContext TodayPieData(
+                    totalAmount = 0,
+                    shares = emptyList(),
+                    latestTransactionTime = null
+                )
             try {
                 val json = JSONObject(body)
                 totalPages = (json.optInt("totalPages", 1)).coerceAtLeast(1)
@@ -205,6 +215,11 @@ class TransactionsRepository(private val context: Context) {
                     val obj = arr.optJSONObject(i) ?: continue
                     val payStep = obj.optString("pay_step", "")
                     if (payStep.contains("취소")) continue
+                    val txDateTime = obj.optString("transaction_date", "").trim()
+                    if (txDateTime.length >= 19) {
+                        val prev = latestRawDateTime
+                        latestRawDateTime = if (prev == null || txDateTime > prev) txDateTime else prev
+                    }
                     val colNo = obj.optString("col_no", "")
                     val rawProduct = obj.optString("product", "-")
                     val mapped = mapByCol[colNo]?.actualProduct?.takeIf { it.isNotBlank() } ?: rawProduct
@@ -214,7 +229,11 @@ class TransactionsRepository(private val context: Context) {
                 }
             } catch (e: Exception) {
                 Log.w("Vmms", "Failed to parse today pie data", e)
-                return@withContext TodayPieData(0, emptyList())
+                return@withContext TodayPieData(
+                    totalAmount = 0,
+                    shares = emptyList(),
+                    latestTransactionTime = null
+                )
             }
             pageNo += 1
         }
@@ -223,7 +242,8 @@ class TransactionsRepository(private val context: Context) {
             .sortedByDescending { it.value }
             .map { TodayItemShare(it.key, it.value) }
         val total = sorted.sumOf { it.amount }
-        TodayPieData(totalAmount = total, shares = sorted)
+        val latestTime = latestRawDateTime?.takeIf { it.length >= 19 }?.substring(11, 19)
+        TodayPieData(totalAmount = total, shares = sorted, latestTransactionTime = latestTime)
     }
 
     suspend fun fetchLastDaysTotalsExcludingCanceled(

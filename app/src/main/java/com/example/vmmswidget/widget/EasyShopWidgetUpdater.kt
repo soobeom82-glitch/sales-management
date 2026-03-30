@@ -74,6 +74,7 @@ object EasyShopWidgetUpdater {
             views.setViewVisibility(R.id.widget_content, View.GONE)
             views.setViewVisibility(R.id.widget_easyshop_amount_block, View.VISIBLE)
             views.setViewVisibility(R.id.widget_deposit_row, View.VISIBLE)
+            views.setViewVisibility(R.id.widget_latest_trade_time, View.GONE)
             views.setViewVisibility(R.id.widget_progress, if (refreshing) View.VISIBLE else View.GONE)
             views.setTextColor(R.id.widget_avg, Color.parseColor("#334155"))
             views.setTextColor(R.id.widget_title, Color.parseColor("#334155"))

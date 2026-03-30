@@ -39,7 +39,7 @@ class FetchWidgetWorker(
         val password = auth.getPassword()
 
         if (id.isNullOrBlank() || password.isNullOrBlank()) {
-            saveAndUpdate("로그인 정보가 없습니다. 앱에서 입력하세요.", 0)
+            saveAndUpdate("로그인 정보가 없습니다. 앱에서 입력하세요.", 0, null)
             return@withContext Result.success()
         }
 
@@ -58,7 +58,7 @@ class FetchWidgetWorker(
         val html = if (needsLogin) {
             val loginOk = performLogin(client, id, password)
             if (!loginOk) {
-                saveAndUpdate("로그인 실패: 계정 확인 필요", 0)
+                saveAndUpdate("로그인 실패: 계정 확인 필요", 0, null)
                 Log.w("Vmms", "Login failed")
                 return@withContext Result.success()
             }
@@ -71,7 +71,7 @@ class FetchWidgetWorker(
         }
 
         if (html.isNullOrBlank()) {
-            saveAndUpdate("데이터 불러오기 실패", 0)
+            saveAndUpdate("데이터 불러오기 실패", 0, null)
             Log.w("Vmms", "Target fetch failed")
             return@withContext Result.success()
         }
@@ -85,6 +85,7 @@ class FetchWidgetWorker(
         }
         Log.i("Vmms", "Parsed display: $display")
         val amountValue = sales?.amountValue ?: 0
+        val latestTradeTime = sales?.latestTransactionTime
         val db = AppDatabase.get(appContext)
         if (sales != null) {
             val today = LocalDate.now()
@@ -100,7 +101,7 @@ class FetchWidgetWorker(
         }
         logLast7(db)
         logMissingDays(db)
-        saveAndUpdate(display, amountValue)
+        saveAndUpdate(display, amountValue, latestTradeTime)
         return@withContext Result.success()
     }
 
@@ -122,10 +123,12 @@ class FetchWidgetWorker(
 
     private suspend fun fetchTodaySalesExcludingCanceled(repo: TransactionsRepository): TodaySales? {
         return try {
-            val total = repo.fetchTodayPieData().totalAmount
+            val todayData = repo.fetchTodayPieData()
+            val total = todayData.totalAmount
             TodaySales(
                 amountLabel = "${String.format("%,d", total)}원",
-                amountValue = total
+                amountValue = total,
+                latestTransactionTime = todayData.latestTransactionTime
             )
         } catch (e: Exception) {
             Log.w("Vmms", "Failed to fetch today sales excluding canceled", e)
@@ -255,12 +258,14 @@ class FetchWidgetWorker(
         return !now.isBefore(start) && now.isBefore(end)
     }
 
-    private fun saveAndUpdate(text: String, amountValue: Int) {
+    private fun saveAndUpdate(text: String, amountValue: Int, latestTradeTime: String?) {
         val now = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
-        WidgetDataStore(appContext).saveDisplayText(text)
-        WidgetDataStore(appContext).saveAmount(amountValue)
-        WidgetDataStore(appContext).saveUpdatedAt(now)
-        WidgetDataStore(appContext).saveRefreshing(false)
+        val store = WidgetDataStore(appContext)
+        store.saveDisplayText(text)
+        store.saveAmount(amountValue)
+        store.saveUpdatedAt(now)
+        store.saveVmmsLatestTradeTime(latestTradeTime)
+        store.saveRefreshing(false)
         WidgetUpdater.updateAll(appContext)
     }
 
@@ -294,5 +299,6 @@ class FetchWidgetWorker(
 
 private data class TodaySales(
     val amountLabel: String,
-    val amountValue: Int
+    val amountValue: Int,
+    val latestTransactionTime: String?
 )

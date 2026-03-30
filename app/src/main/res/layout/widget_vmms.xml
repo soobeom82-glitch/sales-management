@@ -99,6 +99,18 @@
                     android:textColor="#334155"
                     android:textSize="11sp" />
             </LinearLayout>
+
+            <TextView
+                android:id="@+id/widget_latest_trade_time"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
+                android:fontFamily="sans-serif-medium"
+                android:gravity="end"
+                android:text="최근 00:00:00"
+                android:textColor="#64748B"
+                android:textSize="10sp"
+                android:visibility="gone" />
         </LinearLayout>
     </LinearLayout>
 

@@ -113,7 +113,10 @@ class SalesFragment : Fragment() {
         val dateText = root.findViewById<TextView>(R.id.text_today_pie_date)
         vmmsPieLoadJob = viewLifecycleOwner.lifecycleScope.launch {
             val pieData = if (date == LocalDate.now() && vmmsTodayShares.isNotEmpty()) {
-                TransactionsRepository.TodayPieData(vmmsTodayTotal, vmmsTodayShares)
+                TransactionsRepository.TodayPieData(
+                    totalAmount = vmmsTodayTotal,
+                    shares = vmmsTodayShares
+                )
             } else {
                 withContext(Dispatchers.IO) {
                     TransactionsRepository(appContext).fetchPieDataForDate(date)

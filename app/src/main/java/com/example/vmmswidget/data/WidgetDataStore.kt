@@ -30,6 +30,14 @@ class WidgetDataStore(context: Context) {
 
     fun isRefreshing(): Boolean = prefs.getBoolean(KEY_REFRESHING, false)
 
+    fun saveVmmsLatestTradeTime(value: String?) {
+        prefs.edit().putString(KEY_VMMS_LATEST_TRADE_TIME, value ?: "").apply()
+    }
+
+    fun getVmmsLatestTradeTime(): String {
+        return prefs.getString(KEY_VMMS_LATEST_TRADE_TIME, "") ?: ""
+    }
+
     fun saveEasyShopDisplayText(text: String) {
         prefs.edit().putString(KEY_EASYSHOP_TEXT, text).apply()
     }
@@ -114,6 +122,7 @@ class WidgetDataStore(context: Context) {
         private const val KEY_AMOUNT = "amount_value"
         private const val KEY_UPDATED_AT = "updated_at"
         private const val KEY_REFRESHING = "refreshing"
+        private const val KEY_VMMS_LATEST_TRADE_TIME = "vmms_latest_trade_time"
         private const val KEY_EASYSHOP_TEXT = "easyshop_display_text"
         private const val KEY_EASYSHOP_AMOUNT = "easyshop_amount_value"
         private const val KEY_EASYSHOP_DEPOSIT_AMOUNT = "easyshop_deposit_amount_value"
